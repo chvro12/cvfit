@@ -1,4 +1,11 @@
 node_modules
 dist
+server-dist
 .DS_Store
 .env
+.env.*
+!.env.example
+storage
+build
+*.tsbuildinfo
+.claude/

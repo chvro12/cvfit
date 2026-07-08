@@ -1,24 +1,3 @@
-/**
- * Kimi AI Service — Moonshot AI API
- *
- * IMPORTANT: En production, cette cle doit etre stockee cote serveur
- * et jamais exposee dans le frontend. Cette approche est temporaire
- * pour le MVP.
- */
-
-const KIMI_API_KEY = 'sk-8GE7fwPyvA1PLyto7xLxLJoHo8p29B6KSBhq9kpV04wKwVGZ'
-const KIMI_BASE_URL = 'https://api.moonshot.cn/v1'
-const KIMI_MODEL = 'moonshot-v1-32k'  // 32K context for long CVs + job offers
-
-/* ───────── types ───────── */
-export interface KimiResponse {
-  choices: Array<{
-    message: {
-      content: string
-    }
-  }>
-}
-
 export interface OptimizationResult {
   section: string
   avant: string
@@ -31,189 +10,288 @@ export interface KeywordSet {
   experience: string[]
 }
 
-/* ───────── core API call ───────── */
-async function callKimi(systemPrompt: string, userPrompt: string): Promise<string> {
-  const response = await fetch(`${KIMI_BASE_URL}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${KIMI_API_KEY}`,
-    },
-    body: JSON.stringify({
-      model: KIMI_MODEL,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
-      ],
-      temperature: 0.7,
-      max_tokens: 4000,
-    }),
+export interface CvExperience {
+  title: string
+  company: string
+  period: string
+  location: string
+  bullets: string[]
+}
+
+export interface CvEducation {
+  degree: string
+  school: string
+  location: string
+  period: string
+  description: string
+}
+
+export interface CvLanguage {
+  language: string
+  level: string
+}
+
+export interface StructuredCv {
+  fullName: string
+  title: string
+  profile: string
+  contact: {
+    email: string
+    phone: string
+    location: string
+    linkedin: string
+    portfolio: string
+  }
+  experiences: CvExperience[]
+  education: CvEducation[]
+  skills: string[]
+  languages: CvLanguage[]
+  certifications: string[]
+  interests: string[]
+}
+
+export interface UploadedDocument {
+  id: string
+  type: 'PDF' | 'DOCX'
+  originalName: string
+  extractedText: string | null
+  createdAt: string
+}
+
+export interface EditorState {
+  edits: Record<string, string>
+  cvName: string
+  template: string
+  police: string
+  densite: string
+  interligne: string
+  marges: string
+  accentColor: string
+  tailleTexte: number
+  sectionSpacing: string
+  photoPosition: string
+  photoSize: string
+  photoShape: string
+  sections: Array<{ id: string; type: string; label: string; visible: boolean }>
+  diffs: Array<{ status: string; modifiedText?: string }>
+  experienceOrder: number[]
+}
+
+export interface GenerationResult {
+  id: string
+  status: 'PENDING' | 'COMPLETED' | 'FAILED'
+  keywords: KeywordSet | null
+  optimizations: OptimizationResult[] | null
+  structuredCv: StructuredCv | null
+  atsScore: number | null
+  atsScoreBefore: number | null
+  atsMissingKeywords: string[] | null
+  editorState?: EditorState | null
+  errorMessage?: string | null
+}
+
+export interface GenerationSummary {
+  id: string
+  status: 'PENDING' | 'COMPLETED' | 'FAILED'
+  atsScore: number | null
+  atsScoreBefore: number | null
+  createdAt: string
+  jobOffer: string
+  hasCoverLetter: boolean
+  hasInterviewPrep: boolean
+  document: { originalName: string; type: 'PDF' | 'DOCX' }
+  applications?: Array<{
+    id: string
+    company: string
+    role: string
+    status: ApplicationStatus
+    jobUrl: string | null
+    updatedAt: string
+  }>
+}
+
+export interface DocumentSummary {
+  id: string
+  type: 'PDF' | 'DOCX'
+  originalName: string
+  size: number
+  createdAt: string
+  offers: Array<{ id: string; jobOffer: string; createdAt: string; atsScore: number | null; atsScoreBefore: number | null }>
+  _count: { generations: number }
+}
+
+export interface InterviewPrep {
+  pitch: string
+  questions: Array<{ question: string; answer: string }>
+  objections: Array<{ risk: string; response: string }>
+  questionsToAsk: string[]
+}
+
+export type ApplicationStatus = 'TO_APPLY' | 'APPLIED' | 'FOLLOW_UP' | 'INTERVIEW' | 'OFFER' | 'REJECTED' | 'ARCHIVED'
+
+export interface JobApplication {
+  id: string
+  generationId: string | null
+  company: string
+  role: string
+  status: ApplicationStatus
+  jobUrl: string | null
+  notes: string | null
+  followUpAt: string | null
+  createdAt: string
+  updatedAt: string
+  generation?: {
+    id: string
+    atsScore: number | null
+    atsScoreBefore: number | null
+    document: { originalName: string }
+  } | null
+}
+
+async function api<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(path, {
+    credentials: 'include',
+    headers: init?.body instanceof FormData ? undefined : { 'Content-Type': 'application/json' },
+    ...init,
   })
 
+  const data = await response.json().catch(() => null)
   if (!response.ok) {
-    const errorText = await response.text()
-    throw new Error(`Kimi API error (${response.status}): ${errorText}`)
+    const message = data && typeof data.error === 'string'
+      ? data.error
+      : `Le serveur ne répond pas (HTTP ${response.status}). Vérifiez qu'il est démarré, puis réessayez.`
+    throw new Error(message)
   }
-
-  const data = (await response.json()) as KimiResponse
-  return data.choices[0]?.message?.content || ''
+  return (data ?? {}) as T
 }
 
-/**
- * Extract keywords from a job offer using Kimi AI.
- * Falls back to basic parsing if the API response is not valid JSON.
- */
 export async function extractKeywordsFromOffer(offerText: string): Promise<KeywordSet> {
-  const systemPrompt = `Tu es un expert en analyse d'offres d'emploi. Extrais les mots-cles et competences d'une offre d'emploi.
-Reponds UNIQUEMENT en JSON avec ce format exact:
-{
-  "technical": ["competence1", "competence2"],
-  "softSkills": ["soft1", "soft2"],
-  "experience": ["exp1", "exp2"]
-}
-Ne mets aucun texte avant ou apres le JSON.`
-
-  const content = await callKimi(
-    systemPrompt,
-    `Analyse cette offre d'emploi et extrais les mots-cles:\n\n${offerText}`
-  )
-
-  try {
-    // Try to extract JSON from the response
-    const jsonMatch = content.match(/\{[\s\S]*\}/)
-    if (jsonMatch) {
-      const parsed = JSON.parse(jsonMatch[0])
-      return {
-        technical: Array.isArray(parsed.technical) ? parsed.technical : [],
-        softSkills: Array.isArray(parsed.softSkills) ? parsed.softSkills : [],
-        experience: Array.isArray(parsed.experience) ? parsed.experience : [],
-      }
-    }
-  } catch {
-    // JSON parsing failed, fall through to manual parsing
-  }
-
-  // Fallback: extract keywords manually from the text
-  const allKeywords = content
-    .split(/[\n,;]/)
-    .map((k) => k.trim().replace(/^[-\u2022*]/, '').trim())
-    .filter((k) => k.length > 2 && k.length < 50)
-    .slice(0, 20)
-
-  return {
-    technical: allKeywords.filter((_, i) => i % 3 === 0),
-    softSkills: allKeywords.filter((_, i) => i % 3 === 1),
-    experience: allKeywords.filter((_, i) => i % 3 === 2),
-  }
+  const data = await api<{ keywords: KeywordSet }>('/api/ai/keywords', {
+    method: 'POST',
+    body: JSON.stringify({ jobOffer: offerText }),
+  })
+  return data.keywords
 }
 
-/**
- * Generate CV optimization diffs using Kimi AI.
- * Returns an empty array if parsing fails — caller should handle with mock fallback.
- */
-export async function generateOptimizations(
-  cvText: string,
-  offerText: string
-): Promise<OptimizationResult[]> {
-  const systemPrompt = `Tu es un expert en redaction de CV et optimisation ATS. Tu aides les candidats a adapter leur CV pour une offre d'emploi specifique.
+export async function uploadCvDocument(cv: File, photo?: File | null): Promise<UploadedDocument> {
+  const formData = new FormData()
+  formData.set('cv', cv)
+  if (photo) formData.set('photo', photo)
 
-Pour chaque section du CV, propose une version amelioree qui:
-1. Integre les mots-cles de l'offre d'emploi
-2. Utilise des verbes d'action percutants
-3. Quantifie les resultats quand c'est possible
-4. Respecte les normes ATS (texte simple, pas de graphiques)
-
-Reponds UNIQUEMENT en JSON avec ce format exact:
-[
-  {
-    "section": "Nom de la section",
-    "avant": "texte original",
-    "apres": "texte optimise"
-  }
-]
-Ne mets aucun texte avant ou apres le JSON. Sois concis et professionnel.`
-
-  const content = await callKimi(
-    systemPrompt,
-    `Voici mon CV:\n\n${cvText}\n\n---\n\nVoici l'offre d'emploi:\n\n${offerText}\n\nPropose des ameliorations section par section.`
-  )
-
-  try {
-    const jsonMatch = content.match(/\[[\s\S]*\]/)
-    if (jsonMatch) {
-      const parsed = JSON.parse(jsonMatch[0])
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed.map((opt: Record<string, unknown>) => ({
-          section: String(opt.section || 'Section'),
-          avant: String(opt.avant || ''),
-          apres: String(opt.apres || ''),
-        }))
-      }
-    }
-  } catch {
-    // JSON parsing failed
-  }
-
-  // Return empty — caller should handle with mock fallback
-  return []
+  const data = await api<{ document: UploadedDocument }>('/api/documents/upload', {
+    method: 'POST',
+    body: formData,
+  })
+  return data.document
 }
 
-/**
- * Calculate ATS compatibility score (0-100) using Kimi AI.
- */
-export async function calculateATSScore(cvText: string, offerText: string): Promise<number> {
-  const systemPrompt = `Tu es un expert en systemes ATS (Applicant Tracking System). Evalue la correspondance entre un CV et une offre d'emploi.
-Reponds UNIQUEMENT avec un nombre entre 0 et 100, rien d'autre.`
-
-  const content = await callKimi(
-    systemPrompt,
-    `CV:\n${cvText}\n\n---\n\nOffre:\n${offerText}\n\nDonne un score de correspondance sur 100.`
-  )
-
-  const match = content.match(/\d+/)
-  if (match) {
-    const score = parseInt(match[0], 10)
-    return Math.min(100, Math.max(0, score))
-  }
-  return 50
+export async function createGeneration(
+  documentId: string,
+  jobOffer: string,
+  mode = 'preserve',
+): Promise<GenerationResult> {
+  const data = await api<{ generation: GenerationResult }>('/api/generations', {
+    method: 'POST',
+    body: JSON.stringify({ documentId, jobOffer, mode }),
+  })
+  return data.generation
 }
 
-/**
- * Rewrite a single bullet point for better impact.
- */
-export async function rewriteBullet(bullet: string, context: string): Promise<string> {
-  const systemPrompt = `Tu es un expert en redaction de CV. Reformule les bullet points pour qu'ils soient percutants, quantifies et orientes resultats.`
-
-  return await callKimi(
-    systemPrompt,
-    `Contexte: ${context}\n\nBullet point a reformuler:\n${bullet}\n\nPropose une version amelioree, concise et percutante.`
-  )
+export async function listGenerations(): Promise<GenerationSummary[]> {
+  const data = await api<{ generations: GenerationSummary[] }>('/api/generations')
+  return data.generations
 }
 
-/**
- * Generate a professional cover letter.
- */
-export async function generateCoverLetter(cvText: string, offerText: string): Promise<string> {
-  const systemPrompt = `Tu es un expert en redaction de lettres de motivation. Redige une lettre de motivation professionnelle, personnalisee et percutante.`
-
-  return await callKimi(
-    systemPrompt,
-    `Mon CV:\n${cvText}\n\n---\n\nL'offre d'emploi:\n${offerText}\n\nRedige une lettre de motivation professionnelle.`
-  )
+export async function listDocuments(): Promise<DocumentSummary[]> {
+  const data = await api<{ documents: DocumentSummary[] }>('/api/documents')
+  return data.documents
 }
 
-/**
- * Translate a CV from French to English.
- * Keeps the same structure and formatting.
- */
-export async function translateCVToEnglish(cvText: string): Promise<string> {
-  const systemPrompt = `Tu es un expert en traduction de CV professionnels du francais vers l'anglais.
-Traduis le CV en conservant EXACTEMENT la meme structure, format et mise en page.
-Utilise des termes professionnels anglais standards pour le domaine.
-Ne traduis pas les noms propres (noms de personnes, entreprises, ecoles, villes).`
+export function documentDownloadUrl(id: string) {
+  return `/api/documents/${id}/download`
+}
 
-  return await callKimi(
-    systemPrompt,
-    `Traduis ce CV du francais vers l'anglais:\n\n${cvText}`
-  )
+export async function getGeneration(id: string): Promise<GenerationResult & { jobOffer: string; document: { extractedText: string | null; originalName: string } }> {
+  const data = await api<{ generation: GenerationResult & { jobOffer: string; document: { extractedText: string | null; originalName: string } } }>(`/api/generations/${id}`)
+  return data.generation
+}
+
+export async function generateCoverLetter(generationId: string, regenerate = false): Promise<string> {
+  const data = await api<{ coverLetter: string }>(`/api/generations/${generationId}/cover-letter`, {
+    method: 'POST',
+    body: JSON.stringify({ regenerate }),
+  })
+  return data.coverLetter
+}
+
+export async function generateInterviewPrep(generationId: string, regenerate = false): Promise<InterviewPrep> {
+  const data = await api<{ interviewPrep: InterviewPrep }>(`/api/generations/${generationId}/interview-prep`, {
+    method: 'POST',
+    body: JSON.stringify({ regenerate }),
+  })
+  return data.interviewPrep
+}
+
+export async function translateGenerationToEnglish(generationId: string): Promise<{
+  structuredCv: StructuredCv
+  optimizations: OptimizationResult[]
+}> {
+  return api<{ structuredCv: StructuredCv; optimizations: OptimizationResult[] }>(`/api/generations/${generationId}/translate-en`, {
+    method: 'POST',
+  })
+}
+
+export async function saveEditorState(generationId: string, editorState: EditorState): Promise<void> {
+  await api<{ ok: true }>(`/api/generations/${generationId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ editorState }),
+  })
+}
+
+export async function fetchOfferFromUrl(url: string): Promise<string> {
+  const data = await api<{ text: string }>('/api/ai/fetch-offer', {
+    method: 'POST',
+    body: JSON.stringify({ url }),
+  })
+  return data.text
+}
+
+export async function listApplications(): Promise<JobApplication[]> {
+  const data = await api<{ applications: JobApplication[] }>('/api/applications')
+  return data.applications
+}
+
+export async function createApplication(input: {
+  generationId?: string | null
+  company: string
+  role: string
+  status?: ApplicationStatus
+  jobUrl?: string | null
+  notes?: string | null
+  followUpAt?: string | null
+}): Promise<JobApplication> {
+  const data = await api<{ application: JobApplication }>('/api/applications', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+  return data.application
+}
+
+export async function updateApplication(id: string, input: Partial<{
+  company: string
+  role: string
+  status: ApplicationStatus
+  jobUrl: string | null
+  notes: string | null
+  followUpAt: string | null
+}>): Promise<JobApplication> {
+  const data = await api<{ application: JobApplication }>(`/api/applications/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(input),
+  })
+  return data.application
+}
+
+export async function deleteApplication(id: string): Promise<void> {
+  await api<{ ok: true }>(`/api/applications/${id}`, { method: 'DELETE' })
 }

@@ -1,9 +1,10 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { useNavigate } from 'react-router'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Eye, EyeOff, Loader2, Mail, Lock, User, Star
 } from 'lucide-react'
+import { getMe, login, register } from '../services/api'
 
 /* ───────── easing ───────── */
 const easeOutExpo = [0.16, 1, 0.3, 1] as [number, number, number, number]
@@ -29,25 +30,6 @@ function calcStrength(pw: string): number {
 
 const strengthLabels = ['Faible', 'Moyenne', 'Bonne', 'Forte']
 const strengthColors = ['#EF4444', '#F59E0B', '#10B981', '#10B981']
-
-/* ───────── Google SVG icon ───────── */
-const GoogleIcon = () => (
-  <svg width="20" height="20" viewBox="0 0 20 20">
-    <path fill="#4285F4" d="M18.17 10.18c0-.64-.06-1.25-.16-1.84H10v3.48h4.58c-.2 1.1-.8 2.03-1.7 2.65v2.2h2.75c1.6-1.48 2.52-3.66 2.52-6.49z"/>
-    <path fill="#34A853" d="M10 19c2.3 0 4.23-.76 5.63-2.06l-2.75-2.2c-.76.51-1.73.81-2.88.81-2.22 0-4.1-1.5-4.77-3.51H2.4v2.27C3.8 16.25 6.65 19 10 19z"/>
-    <path fill="#FBBC05" d="M5.23 11.04c-.17-.51-.27-1.05-.27-1.61s.1-1.1.27-1.61V5.55H2.4C1.76 6.82 1.38 8.26 1.38 9.83c0 1.57.38 3.01 1.02 4.28l2.83-2.2z"/>
-    <path fill="#EA4335" d="M10 4.38c1.25 0 2.37.43 3.25 1.27l2.44-2.44C14.22 1.64 12.29.68 10 .68c-3.35 0-6.2 2.75-7.6 6.15l2.83 2.2c.67-2.01 2.55-3.65 4.77-3.65z"/>
-  </svg>
-)
-
-/* ───────── divider ───────── */
-const Divider = () => (
-  <div className="flex items-center gap-4 my-6">
-    <div className="flex-1 h-px bg-[#E0E0E0]" />
-    <span className="text-sm text-[#6B7280]">ou</span>
-    <div className="flex-1 h-px bg-[#E0E0E0]" />
-  </div>
-)
 
 /* ───────── form input ───────── */
 const FormInput = ({
@@ -169,11 +151,15 @@ const LoginForm = ({ onSwitch }: { onSwitch: () => void }) => {
     ev.preventDefault()
     if (!validate()) return
     setLoading(true)
-    await new Promise((r) => setTimeout(r, 1200))
-    localStorage.setItem('cvfit_user', JSON.stringify({ email, name: email.split('@')[0] }))
-    setLoading(false)
-    navigate('/app')
-  }, [validate, email, navigate])
+    try {
+      await login(email, password)
+      navigate('/app')
+    } catch (error) {
+      setErrors({ form: error instanceof Error ? error.message : 'Connexion impossible' })
+    } finally {
+      setLoading(false)
+    }
+  }, [validate, email, password, navigate])
 
   return (
     <motion.form
@@ -194,6 +180,7 @@ const LoginForm = ({ onSwitch }: { onSwitch: () => void }) => {
       <FormInput label="Mot de passe" placeholder="&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;"
         value={password} onChange={setPassword} error={errors.password} icon={Lock}
         isPassword showPassword={showPw} onTogglePassword={() => setShowPw(!showPw)} delay={0.12} />
+      {errors.form && <p className="mb-4 text-sm text-[#EF4444]">{errors.form}</p>}
 
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.18 }}>
         <button
@@ -204,20 +191,6 @@ const LoginForm = ({ onSwitch }: { onSwitch: () => void }) => {
           {loading ? <Loader2 size={18} className="animate-spin" /> : 'Se connecter'}
         </button>
       </motion.div>
-
-      <Divider />
-
-      <motion.button
-        type="button"
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, delay: 0.24 }}
-        onClick={() => alert('OAuth Google - simulation')}
-        className="w-full py-3.5 bg-white border-[1.5px] border-[#E0E0E0] rounded-xl flex items-center justify-center gap-3 text-[#374151] font-medium hover:bg-[#FAFAFA] hover:border-[#6B7280] transition-all"
-      >
-        <GoogleIcon />
-        Continuer avec Google
-      </motion.button>
 
       <motion.p
         initial={{ opacity: 0 }}
@@ -247,9 +220,10 @@ const RegisterForm = ({ onSwitch }: { onSwitch: () => void }) => {
 
   const validate = useCallback(() => {
     const e: Record<string, string> = {}
-    if (!form.name.trim()) e.name = 'Le pr&eacute;nom est requis'
+    if (!form.name.trim()) e.name = 'Le prénom est requis'
     if (!form.email || !/^\S+@\S+\.\S+$/.test(form.email)) e.email = 'Veuillez entrer une adresse email valide'
     if (!form.password) e.password = 'Le mot de passe est requis'
+    else if (form.password.length < 8) e.password = 'Le mot de passe doit contenir au moins 8 caractères'
     if (!form.terms) e.terms = 'Vous devez accepter les conditions'
     setErrors(e)
     return Object.keys(e).length === 0
@@ -259,10 +233,14 @@ const RegisterForm = ({ onSwitch }: { onSwitch: () => void }) => {
     ev.preventDefault()
     if (!validate()) return
     setLoading(true)
-    await new Promise((r) => setTimeout(r, 1200))
-    localStorage.setItem('cvfit_user', JSON.stringify({ email: form.email, name: form.name }))
-    setLoading(false)
-    navigate('/app')
+    try {
+      await register(form.name, form.email, form.password)
+      navigate('/app')
+    } catch (error) {
+      setErrors({ form: error instanceof Error ? error.message : 'Inscription impossible' })
+    } finally {
+      setLoading(false)
+    }
   }, [validate, form, navigate])
 
   return (
@@ -288,6 +266,7 @@ const RegisterForm = ({ onSwitch }: { onSwitch: () => void }) => {
         isPassword showPassword={showPw} onTogglePassword={() => setShowPw(!showPw)} delay={0.18} />
 
       <PasswordStrengthBar password={form.password} />
+      {errors.form && <p className="mb-4 text-sm text-[#EF4444]">{errors.form}</p>}
 
       <motion.div
         initial={{ opacity: 0, y: 12 }}
@@ -308,10 +287,7 @@ const RegisterForm = ({ onSwitch }: { onSwitch: () => void }) => {
             )}
           </div>
           <span className="text-sm text-[#374151]">
-            J&apos;accepte les{' '}
-            <span className="text-[#F85A3E] hover:underline cursor-pointer">Conditions d&apos;utilisation</span>
-            {' '}et la{' '}
-            <span className="text-[#F85A3E] hover:underline cursor-pointer">Politique de confidentialit&eacute;</span>.
+            J&apos;accepte les Conditions d&apos;utilisation et la Politique de confidentialit&eacute;.
           </span>
         </label>
         {errors.terms && <p className="text-sm text-[#EF4444] mt-1">{errors.terms}</p>}
@@ -326,20 +302,6 @@ const RegisterForm = ({ onSwitch }: { onSwitch: () => void }) => {
           {loading ? <Loader2 size={18} className="animate-spin" /> : 'Cr&eacute;er mon compte'}
         </button>
       </motion.div>
-
-      <Divider />
-
-      <motion.button
-        type="button"
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, delay: 0.36 }}
-        onClick={() => alert('OAuth Google - simulation')}
-        className="w-full py-3.5 bg-white border-[1.5px] border-[#E0E0E0] rounded-xl flex items-center justify-center gap-3 text-[#374151] font-medium hover:bg-[#FAFAFA] hover:border-[#6B7280] transition-all"
-      >
-        <GoogleIcon />
-        Continuer avec Google
-      </motion.button>
 
       <motion.p
         initial={{ opacity: 0 }}
@@ -377,7 +339,7 @@ const LeftPanel = () => (
     <div className="relative z-10">
       <div className="bg-white/[0.06] border border-white/10 rounded-2xl p-6 max-w-[360px]">
         <p className="text-[15px] text-white italic mb-4 leading-relaxed">
-          &ldquo;J&apos;ai adapt&eacute; mon CV pour 15 offres en une heure. Le mode ATS m&apos;a fait passer le filtre des logiciels de recrutement.&rdquo;
+          &ldquo;J&apos;ai adapt&eacute; mon CV pour 15 offres en une heure. L&apos;optimisation ATS m&apos;a fait passer le filtre des logiciels de recrutement.&rdquo;
         </p>
         <div className="flex items-center gap-1 mb-2">
           {[1, 2, 3, 4, 5].map((i) => (
@@ -393,8 +355,14 @@ const LeftPanel = () => (
 
 /* ───────── main auth page ───────── */
 export default function Auth() {
+  const navigate = useNavigate()
   const [mode, setMode] = useState<'login' | 'register'>('login')
   const isLogin = mode === 'login'
+
+  /* deja connecte → direct vers l'app */
+  useEffect(() => {
+    getMe().then(() => navigate('/app')).catch(() => {})
+  }, [navigate])
 
   return (
     <div className="min-h-[100dvh] flex">

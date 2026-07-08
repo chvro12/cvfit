@@ -1,5 +1,5 @@
-import { useRef } from 'react'
-import { Link } from 'react-router'
+import { useEffect, useRef } from 'react'
+import { Link, useLocation } from 'react-router'
 import { motion, useInView } from 'framer-motion'
 import {
   Star,
@@ -168,7 +168,7 @@ function HowItWorksSection() {
     {
       num: 1,
       title: 'Uploadez votre CV',
-      desc: 'Importez votre CV au format PDF, DOCX ou image. Votre mise en forme est analysée et conservée.',
+      desc: 'Importez votre CV au format PDF ou DOCX. Son contenu est extrait et restructuré dans un modèle optimisé ATS.',
       icon: '/step-upload.svg',
     },
     {
@@ -180,7 +180,7 @@ function HowItWorksSection() {
     {
       num: 3,
       title: "L'IA s'occupe du reste",
-      desc: 'En quelques secondes, votre CV est réécrit pour matcher l\'offre. Même design, contenu optimisé.',
+      desc: 'En quelques secondes, l\'IA propose des reformulations ciblées. Vous validez chaque changement avant de continuer.',
       icon: '/step-ai.svg',
     },
     {
@@ -306,25 +306,25 @@ function FeaturesSection() {
 
   const featuresList = [
     'Mots-clés extraits automatiquement de l\'offre',
-    'Contenu réécrit sans toucher à la mise en forme',
-    'Option mode ATS pour les logiciels de recrutement',
-    'Support de OpenAI, Claude et Kimi AI',
+    'Contenu enrichi et aligné sur l\'offre pour maximiser votre score',
+    'Chaque modification validée par vous, une par une',
+    'Score ATS avant / après pour mesurer le gain',
   ]
 
   const featureCards = [
     {
-      title: 'Multi-IA',
-      desc: "Choisissez votre moteur d'IA : OpenAI GPT, Claude d'Anthropic, ou Kimi AI. Vous gardez le contrôle.",
+      title: 'Optimisation IA',
+      desc: "L'IA analyse l'offre et chaque section de votre CV, puis propose des améliorations ciblées. Vous approuvez ou rejetez chaque changement.",
       icon: Cpu,
     },
     {
-      title: 'Mode ATS',
-      desc: 'Option pour convertir votre CV aux normes ATS. Texte pur, structure optimisée pour les logiciels de recrutement.',
+      title: 'PDF lisible par les ATS',
+      desc: 'Export PDF en vrai texte (pas une image) : votre CV reste lisible par les logiciels de recrutement.',
       icon: FileCheck,
     },
     {
-      title: 'Photo conservée',
-      desc: 'Votre photo de profil est automatiquement extraite et replacée. Vous pouvez aussi en uploader une nouvelle.',
+      title: 'Photo de profil',
+      desc: 'Ajoutez une photo et choisissez sa position dans l\'éditeur : en haut, à gauche ou à droite.',
       icon: Image,
     },
   ]
@@ -511,13 +511,13 @@ function TestimonialsSection() {
     },
     {
       quote:
-        "Le mode ATS est génial. Mon CV passait systématiquement à la trappe des logiciels de recrutement. Maintenant j'ai confiance.",
+        "Le score ATS avant / après est génial. Mon CV passait systématiquement à la trappe des logiciels de recrutement. Maintenant j'ai confiance.",
       author: 'Thomas D.',
       detail: 'Développeur Full Stack',
     },
     {
       quote:
-        "Simple, rapide, et le résultat est propre. Ma mise en forme n'a pas bougé d'un pouce, mais le contenu était parfaitement aligné avec l'offre.",
+        "Simple, rapide, et le résultat est propre. J'ai validé les modifications une par une et le contenu était parfaitement aligné avec l'offre.",
       author: 'Sarah K.',
       detail: 'Chef de projet marketing',
     },
@@ -637,13 +637,11 @@ function PricingSection() {
             className="text-body-large"
             style={{ color: 'var(--text-gray)' }}
           >
-            Passez à la version Pro quand vous en avez besoin. Pas d'engagement.
+            Toutes les fonctionnalités essentielles sont disponibles pendant la phase de lancement.
           </motion.p>
         </div>
 
-        {/* Pricing Cards */}
-        <div className="max-w-[800px] mx-auto grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Card 1 — Gratuit */}
+        <div className="max-w-[520px] mx-auto">
           <motion.div
             initial={{ opacity: 0, y: 40 }}
             animate={isInView ? { opacity: 1, y: 0 } : {}}
@@ -662,10 +660,10 @@ function PricingSection() {
 
             <ul className="flex flex-col gap-3 mb-8 flex-1">
               {[
-                '3 adaptations de CV par mois',
-                '1 clé API (OpenAI)',
-                'Mode design conservé',
-                'Téléchargement PDF',
+                'Adaptations de CV disponibles',
+                'Optimisation IA (OpenAI)',
+                'Score ATS avant / après',
+                'Export PDF texte (ATS-friendly)',
               ].map((f) => (
                 <li key={f} className="flex items-center gap-3">
                   <CheckCircle
@@ -685,68 +683,6 @@ function PricingSection() {
               className="text-button text-navy px-7 py-3.5 rounded-[12px] text-center transition-all duration-200 border-[1.5px] border-navy hover:bg-navy hover:text-white"
             >
               Commencer gratuitement
-            </Link>
-          </motion.div>
-
-          {/* Card 2 — Pro */}
-          <motion.div
-            initial={{ opacity: 0, y: 40 }}
-            animate={isInView ? { opacity: 1, y: 0 } : {}}
-            transition={{ duration: 0.6, delay: 0.3, ease: easeOutExpo }}
-            className="relative bg-white rounded-[20px] p-8 sm:p-10 flex flex-col animate-pulse-glow"
-            style={{ border: '2px solid var(--coral)' }}
-          >
-            {/* Badge */}
-            <div
-              className="absolute -top-3 right-6 text-small font-semibold px-3.5 py-1 rounded-full"
-              style={{ background: 'var(--coral)', color: 'white' }}
-            >
-              RECOMMANDÉ
-            </div>
-
-            <h3 className="text-card-title text-navy mb-2">Pro</h3>
-            <div className="flex items-baseline gap-1 mb-6">
-              <span
-                className="text-navy"
-                style={{ fontSize: '48px', fontWeight: 700, lineHeight: 1 }}
-              >
-                9,90€
-              </span>
-              <span className="text-body" style={{ color: 'var(--text-gray)' }}>
-                /mois
-              </span>
-            </div>
-
-            <ul className="flex flex-col gap-3 mb-8 flex-1">
-              {[
-                'Adaptations illimitées',
-                'Multi-IA (OpenAI, Claude, Kimi)',
-                'Mode design conservé + Mode ATS',
-                'Extraction de mots-clés avancée',
-                'Support prioritaire',
-              ].map((f) => (
-                <li key={f} className="flex items-center gap-3">
-                  <CheckCircle
-                    size={18}
-                    className="shrink-0"
-                    style={{ color: 'var(--success)' }}
-                  />
-                  <span className="text-body" style={{ color: 'var(--dark-gray)' }}>
-                    {f}
-                  </span>
-                </li>
-              ))}
-            </ul>
-
-            <Link
-              to="/tarifs"
-              className="text-button text-white px-7 py-3.5 rounded-[12px] text-center transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]"
-              style={{
-                background: 'var(--coral)',
-                boxShadow: '0 4px 16px rgba(248,90,62,0.35)',
-              }}
-            >
-              Passer Pro
             </Link>
           </motion.div>
         </div>
@@ -835,6 +771,18 @@ function FinalCTASection() {
 
 /* ─── Home Page ─── */
 export default function Home() {
+  const location = useLocation()
+
+  /* scroll vers l'ancre (#tarifs, #comment-ca-marche) y compris en arrivant d'une autre page */
+  useEffect(() => {
+    if (!location.hash) return
+    const el = document.getElementById(location.hash.slice(1))
+    if (el) {
+      const top = el.getBoundingClientRect().top + window.scrollY - 80
+      window.scrollTo({ top, behavior: 'smooth' })
+    }
+  }, [location.hash])
+
   return (
     <div className="flex flex-col">
       <HeroSection />

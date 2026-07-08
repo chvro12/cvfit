@@ -1,0 +1,18 @@
+{
+  "name": "CVFit",
+  "short_name": "CVFit",
+  "description": "Adapter son CV à chaque offre d’emploi avec l’IA.",
+  "lang": "fr-FR",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#FAFAFA",
+  "theme_color": "#0B1D3A",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

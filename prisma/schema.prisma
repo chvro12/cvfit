@@ -1,0 +1,143 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum Plan {
+  FREE
+  PRO
+}
+
+enum DocumentType {
+  PDF
+  DOCX
+}
+
+enum GenerationStatus {
+  PENDING
+  COMPLETED
+  FAILED
+}
+
+model User {
+  id           String        @id @default(cuid())
+  name         String?
+  email        String        @unique
+  passwordHash String
+  role         Role          @default(USER)
+  plan         Plan          @default(FREE)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  sessions     Session[]
+  documents    Document[]
+  generations  Generation[]
+  usageEvents  UsageEvent[]
+  applications JobApplication[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Document {
+  id            String       @id @default(cuid())
+  userId        String
+  type          DocumentType
+  originalName  String
+  mimeType      String
+  size          Int
+  path          String
+  photoPath     String?
+  extractedText String?      @db.LongText
+  createdAt     DateTime     @default(now())
+  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  generations   Generation[]
+
+  @@index([userId])
+}
+
+model Generation {
+  id             String           @id @default(cuid())
+  userId         String
+  documentId     String
+  status         GenerationStatus @default(PENDING)
+  mode           String
+  jobOffer       String           @db.LongText
+  keywords            Json?
+  optimizations       Json?
+  structuredCv        Json?
+  atsScore            Int?
+  atsScoreBefore      Int?
+  atsMissingKeywords  Json?
+  coverLetter         String? @db.LongText
+  interviewPrep       Json?
+  editorState         Json?
+  errorMessage   String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  document       Document         @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  usageEvents    UsageEvent[]
+  applications   JobApplication[]
+
+  @@index([userId])
+  @@index([documentId])
+}
+
+enum ApplicationStatus {
+  TO_APPLY
+  APPLIED
+  FOLLOW_UP
+  INTERVIEW
+  OFFER
+  REJECTED
+  ARCHIVED
+}
+
+model JobApplication {
+  id           String            @id @default(cuid())
+  userId       String
+  generationId String?
+  company      String
+  role         String
+  status       ApplicationStatus @default(TO_APPLY)
+  jobUrl       String?
+  notes        String?           @db.Text
+  followUpAt   DateTime?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  generation   Generation?       @relation(fields: [generationId], references: [id], onDelete: SetNull)
+
+  @@index([userId, status])
+  @@index([generationId])
+}
+
+model UsageEvent {
+  id           String      @id @default(cuid())
+  userId       String
+  generationId String?
+  type         String
+  quantity     Int         @default(1)
+  createdAt    DateTime    @default(now())
+  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  generation   Generation? @relation(fields: [generationId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+}

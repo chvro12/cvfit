@@ -1,14 +1,17 @@
 import { useState, useEffect } from 'react'
-import { Link, useLocation } from 'react-router'
-import { Menu, X } from 'lucide-react'
+import { Link, useLocation, useNavigate } from 'react-router'
+import { Menu, X, LogOut } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { getMe, logout, type CurrentUser } from '../services/api'
 
 const easeOutExpo = [0.16, 1, 0.3, 1] as [number, number, number, number]
 
 export default function Navbar() {
   const [scrolled, setScrolled] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [user, setUser] = useState<CurrentUser | null>(null)
   const location = useLocation()
+  const navigate = useNavigate()
 
   useEffect(() => {
     const handleScroll = () => {
@@ -22,8 +25,16 @@ export default function Navbar() {
     setMobileOpen(false)
   }, [location.pathname])
 
+  useEffect(() => {
+    getMe()
+      .then((result) => setUser(result.user))
+      .catch(() => setUser(null))
+  }, [location.pathname])
+
   const scrollToSection = (id: string) => {
+    setMobileOpen(false)
     if (location.pathname !== '/') {
+      navigate(`/#${id}`)
       return
     }
     const el = document.getElementById(id)
@@ -32,7 +43,15 @@ export default function Navbar() {
       const top = el.getBoundingClientRect().top + window.scrollY - offset
       window.scrollTo({ top, behavior: 'smooth' })
     }
-    setMobileOpen(false)
+  }
+
+  const handleLogout = async () => {
+    try {
+      await logout()
+    } finally {
+      setUser(null)
+      navigate('/')
+    }
   }
 
   return (
@@ -56,53 +75,70 @@ export default function Navbar() {
         </Link>
 
         {/* Desktop Nav Links */}
-        <div className="hidden md:flex items-center gap-8 absolute left-1/2 -translate-x-1/2">
-          <Link
-            to="/"
-            className="text-nav text-navy hover:text-coral transition-colors duration-200"
-          >
-            Accueil
-          </Link>
-          <button
-            onClick={() => scrollToSection('comment-ca-marche')}
-            className="text-nav text-navy hover:text-coral transition-colors duration-200 cursor-pointer bg-transparent border-none"
-          >
-            Comment ça marche
-          </button>
-          <button
-            onClick={() => scrollToSection('tarifs')}
-            className="text-nav text-navy hover:text-coral transition-colors duration-200 cursor-pointer bg-transparent border-none"
-          >
-            Tarifs
-          </button>
+        <div className="hidden md:flex items-center gap-6 absolute left-1/2 -translate-x-1/2">
+          {user ? (
+            <>
+              <Link to="/bibliotheque-cv" className="text-nav text-navy hover:text-coral transition-colors duration-200">Bibliothèque CV</Link>
+              <Link to="/lettres-motivation" className="text-nav text-navy hover:text-coral transition-colors duration-200">Lettres</Link>
+              <Link to="/candidatures" className="text-nav text-navy hover:text-coral transition-colors duration-200">Candidatures</Link>
+            </>
+          ) : (
+            <>
+              <Link to="/" className="text-nav text-navy hover:text-coral transition-colors duration-200">Accueil</Link>
+              <button onClick={() => scrollToSection('comment-ca-marche')} className="text-nav text-navy hover:text-coral transition-colors duration-200 cursor-pointer bg-transparent border-none">Comment ça marche</button>
+              <button onClick={() => scrollToSection('tarifs')} className="text-nav text-navy hover:text-coral transition-colors duration-200 cursor-pointer bg-transparent border-none">Tarifs</button>
+            </>
+          )}
         </div>
 
         {/* Desktop CTAs */}
         <div className="hidden md:flex items-center gap-3">
-          <Link
-            to="/connexion"
-            className="text-button text-navy px-5 py-2.5 rounded-[10px] hover:bg-navy-50 transition-all duration-200"
-          >
-            Se connecter
-          </Link>
-          <Link
-            to="/app"
-            className="text-button text-white px-5 py-2 rounded-[12px] transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]"
-            style={{
-              background: 'var(--coral)',
-              boxShadow: 'none',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = 'var(--coral-dark)'
-              e.currentTarget.style.boxShadow = '0 4px 16px rgba(248,90,62,0.35)'
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'var(--coral)'
-              e.currentTarget.style.boxShadow = 'none'
-            }}
-          >
-            Commencer
-          </Link>
+          {user ? (
+            <>
+              <span className="text-caption text-text-gray max-w-[180px] truncate">{user.name || user.email}</span>
+              <Link
+                to="/app"
+                className="text-button text-white px-5 py-2 rounded-[12px] transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]"
+                style={{ background: 'var(--coral)' }}
+              >
+                Adapter un CV
+              </Link>
+              <button
+                onClick={handleLogout}
+                className="flex items-center gap-1.5 text-button text-navy px-3 py-2.5 rounded-[10px] hover:bg-navy-50 transition-all duration-200"
+                title="Se déconnecter"
+              >
+                <LogOut size={16} />
+              </button>
+            </>
+          ) : (
+            <>
+              <Link
+                to="/connexion"
+                className="text-button text-navy px-5 py-2.5 rounded-[10px] hover:bg-navy-50 transition-all duration-200"
+              >
+                Se connecter
+              </Link>
+              <Link
+                to="/app"
+                className="text-button text-white px-5 py-2 rounded-[12px] transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]"
+                style={{
+                  background: 'var(--coral)',
+                  boxShadow: 'none',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'var(--coral-dark)'
+                  e.currentTarget.style.boxShadow = '0 4px 16px rgba(248,90,62,0.35)'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'var(--coral)'
+                  e.currentTarget.style.boxShadow = 'none'
+                }}
+              >
+                Commencer
+              </Link>
+            </>
+          )}
         </div>
 
         {/* Mobile Hamburger */}
@@ -131,38 +167,65 @@ export default function Navbar() {
             }}
           >
             <div className="px-6 py-6 flex flex-col gap-4">
-              <Link
-                to="/"
-                className="text-nav text-navy py-2 hover:text-coral transition-colors"
-              >
-                Accueil
-              </Link>
-              <button
-                onClick={() => scrollToSection('comment-ca-marche')}
-                className="text-nav text-navy py-2 hover:text-coral transition-colors text-left bg-transparent border-none cursor-pointer"
-              >
-                Comment ça marche
-              </button>
-              <button
-                onClick={() => scrollToSection('tarifs')}
-                className="text-nav text-navy py-2 hover:text-coral transition-colors text-left bg-transparent border-none cursor-pointer"
-              >
-                Tarifs
-              </button>
+              {!user && (
+                <>
+                  <Link to="/" className="text-nav text-navy py-2 hover:text-coral transition-colors">Accueil</Link>
+                  <button onClick={() => scrollToSection('comment-ca-marche')} className="text-nav text-navy py-2 hover:text-coral transition-colors text-left bg-transparent border-none cursor-pointer">Comment ça marche</button>
+                  <button onClick={() => scrollToSection('tarifs')} className="text-nav text-navy py-2 hover:text-coral transition-colors text-left bg-transparent border-none cursor-pointer">Tarifs</button>
+                </>
+              )}
               <hr className="border-mid-gray my-2" />
-              <Link
-                to="/connexion"
-                className="text-button text-navy py-2.5 text-center rounded-[10px] hover:bg-navy-50 transition-all"
-              >
-                Se connecter
-              </Link>
-              <Link
-                to="/app"
-                className="text-button text-white py-2.5 text-center rounded-[12px] transition-all"
-                style={{ background: 'var(--coral)' }}
-              >
-                Commencer
-              </Link>
+              {user ? (
+                <>
+                  <Link
+                    to="/bibliotheque-cv"
+                    className="text-button text-white py-2.5 text-center rounded-[12px] transition-all"
+                    style={{ background: 'var(--coral)' }}
+                  >
+                    Bibliothèque CV
+                  </Link>
+                  <Link
+                    to="/lettres-motivation"
+                    className="text-button text-navy py-2.5 text-center rounded-[10px] hover:bg-navy-50 transition-all"
+                  >
+                    Lettres de motivation
+                  </Link>
+                  <Link
+                    to="/candidatures"
+                    className="text-button text-navy py-2.5 text-center rounded-[10px] hover:bg-navy-50 transition-all"
+                  >
+                    Candidatures
+                  </Link>
+                  <Link
+                    to="/app"
+                    className="text-button text-navy py-2.5 text-center rounded-[10px] hover:bg-navy-50 transition-all"
+                  >
+                    Nouvelle adaptation
+                  </Link>
+                  <button
+                    onClick={handleLogout}
+                    className="text-button text-navy py-2.5 text-center rounded-[10px] hover:bg-navy-50 transition-all"
+                  >
+                    Se déconnecter
+                  </button>
+                </>
+              ) : (
+                <>
+                  <Link
+                    to="/connexion"
+                    className="text-button text-navy py-2.5 text-center rounded-[10px] hover:bg-navy-50 transition-all"
+                  >
+                    Se connecter
+                  </Link>
+                  <Link
+                    to="/app"
+                    className="text-button text-white py-2.5 text-center rounded-[12px] transition-all"
+                    style={{ background: 'var(--coral)' }}
+                  >
+                    Commencer
+                  </Link>
+                </>
+              )}
             </div>
           </motion.div>
         )}

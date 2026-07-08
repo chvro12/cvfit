@@ -1,30 +1,24 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import {
   Shield, Key, Users, FileText, BarChart3, Settings,
-  LogOut, Eye, EyeOff, Check, AlertTriangle,
+  LogOut, Eye, EyeOff, AlertTriangle, Loader2,
 } from 'lucide-react'
+import { getAdminStats, getAdminUsers, getMe, login, logout } from '../services/api'
 
-/* ───────── mock data ───────── */
-const ADMIN_CREDENTIALS = {
-  email: 'sambathiampro@icloud.com',
-  password: 'Mamecodou1@@',
+interface AdminStats {
+  totalUsers: number
+  totalCVs: number
+  totalOptimizations: number
+  activeToday: number
 }
 
-const MOCK_STATS = {
-  totalUsers: 1247,
-  totalCVs: 3892,
-  totalOptimizations: 5621,
-  activeToday: 89,
+interface AdminUserRow {
+  email: string
+  date: string
+  cvs: number
+  optimizations: number
 }
-
-const MOCK_RECENT_USERS = [
-  { email: 'jean.dupont@email.fr', date: '2025-07-08', cvs: 3 },
-  { email: 'marie.leroy@email.fr', date: '2025-07-08', cvs: 1 },
-  { email: 'thomas.martin@email.fr', date: '2025-07-07', cvs: 5 },
-  { email: 'sarah.kane@email.fr', date: '2025-07-07', cvs: 2 },
-  { email: 'alex.dubois@email.fr', date: '2025-07-06', cvs: 1 },
-]
 
 /* ───────── easing ───────── */
 const easeOutExpo = [0.16, 1, 0.3, 1] as [number, number, number, number]
@@ -34,31 +28,74 @@ const easeOutExpo = [0.16, 1, 0.3, 1] as [number, number, number, number]
    ═════════════════════════════════════════════════════════════════ */
 export default function Admin() {
   const [isLoggedIn, setIsLoggedIn] = useState(false)
+  const [checkingSession, setCheckingSession] = useState(true)
+  const [adminEmail, setAdminEmail] = useState('')
   const [loginEmail, setLoginEmail] = useState('')
   const [loginPassword, setLoginPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [loginError, setLoginError] = useState('')
   const [activeTab, setActiveTab] = useState<'dashboard' | 'api' | 'users'>('dashboard')
+  const [stats, setStats] = useState<AdminStats | null>(null)
+  const [recentUsers, setRecentUsers] = useState<AdminUserRow[]>([])
+  const [serviceOk, setServiceOk] = useState<boolean | null>(null)
 
-  /* ── Kimi API config ── */
-  const [kimiApiKey, setKimiApiKey] = useState('')
-  const [showApiKey, setShowApiKey] = useState(false)
-  const [apiKeySaved, setApiKeySaved] = useState(false)
+  const loadAdminData = async () => {
+    const [statsResult, usersResult, health] = await Promise.all([
+      getAdminStats(),
+      getAdminUsers(),
+      fetch('/api/health').then(r => r.ok).catch(() => false),
+    ])
+    setStats(statsResult.stats)
+    setServiceOk(health)
+    setRecentUsers(usersResult.users.map((user) => ({
+      email: user.email,
+      date: new Date(user.createdAt).toISOString().slice(0, 10),
+      cvs: user._count.documents,
+      optimizations: user._count.generations,
+    })))
+  }
 
-  const handleLogin = () => {
-    if (loginEmail === ADMIN_CREDENTIALS.email && loginPassword === ADMIN_CREDENTIALS.password) {
+  /* session existante → connexion directe */
+  useEffect(() => {
+    getMe()
+      .then((result) => {
+        if (result.user.role === 'ADMIN') {
+          setAdminEmail(result.user.email)
+          setIsLoggedIn(true)
+        }
+      })
+      .catch(() => {})
+      .finally(() => setCheckingSession(false))
+  }, [])
+
+  const handleLogin = async () => {
+    try {
+      const result = await login(loginEmail, loginPassword)
+      if (result.user.role !== 'ADMIN') {
+        setLoginError('Acces admin requis')
+        return
+      }
+      setAdminEmail(result.user.email)
       setIsLoggedIn(true)
       setLoginError('')
-    } else {
-      setLoginError('Email ou mot de passe incorrect')
+    } catch (error) {
+      setLoginError(error instanceof Error ? error.message : 'Email ou mot de passe incorrect')
     }
   }
 
-  const handleSaveApiKey = () => {
-    if (kimiApiKey.trim().length >= 20) {
-      setApiKeySaved(true)
-      setTimeout(() => setApiKeySaved(false), 3000)
+  useEffect(() => {
+    if (isLoggedIn) {
+      loadAdminData().catch(() => setLoginError('Impossible de charger les donnees admin'))
     }
+  }, [isLoggedIn])
+
+  /* ═══════ Session check ═══════ */
+  if (checkingSession) {
+    return (
+      <div className="min-h-[100dvh] flex items-center justify-center" style={{ background: 'var(--navy)' }}>
+        <Loader2 size={32} className="animate-spin text-white" />
+      </div>
+    )
   }
 
   /* ═══════ Login Screen ═══════ */
@@ -193,7 +230,9 @@ export default function Admin() {
         {/* Logout */}
         <div className="px-3 py-4 border-t border-mid-gray">
           <button
-            onClick={() => setIsLoggedIn(false)}
+            onClick={() => {
+              logout().finally(() => setIsLoggedIn(false))
+            }}
             className="flex items-center gap-3 w-full px-4 py-3 rounded-xl text-left text-text-gray hover:bg-light-gray transition-all duration-200"
           >
             <LogOut size={18} />
@@ -213,9 +252,9 @@ export default function Admin() {
           </h2>
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-semibold" style={{ background: 'var(--coral)' }}>
-              S
+              {(adminEmail[0] || 'A').toUpperCase()}
             </div>
-            <span className="text-sm text-navy font-medium">sambathiampro@icloud.com</span>
+            <span className="text-sm text-navy font-medium">{adminEmail}</span>
           </div>
         </div>
 
@@ -229,10 +268,10 @@ export default function Admin() {
             {/* Stats grid */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
               {[
-                { label: 'Utilisateurs', value: MOCK_STATS.totalUsers, icon: Users, color: '#3B82F6' },
-                { label: 'CV créés', value: MOCK_STATS.totalCVs, icon: FileText, color: '#10B981' },
-                { label: 'Optimisations', value: MOCK_STATS.totalOptimizations, icon: BarChart3, color: 'var(--coral)' },
-                { label: 'Actifs aujourd\'hui', value: MOCK_STATS.activeToday, icon: Shield, color: '#8B5CF6' },
+                { label: 'Utilisateurs', value: stats?.totalUsers, icon: Users, color: '#3B82F6' },
+                { label: 'CV importés', value: stats?.totalCVs, icon: FileText, color: '#10B981' },
+                { label: 'Optimisations', value: stats?.totalOptimizations, icon: BarChart3, color: 'var(--coral)' },
+                { label: 'Actifs aujourd\'hui', value: stats?.activeToday, icon: Shield, color: '#8B5CF6' },
               ].map((stat, i) => (
                 <motion.div
                   key={stat.label}
@@ -246,7 +285,7 @@ export default function Admin() {
                       <stat.icon size={20} style={{ color: stat.color }} />
                     </div>
                   </div>
-                  <p className="text-2xl font-bold text-navy">{stat.value.toLocaleString()}</p>
+                  <p className="text-2xl font-bold text-navy">{stat.value === undefined ? '—' : stat.value.toLocaleString()}</p>
                   <p className="text-sm text-text-gray">{stat.label}</p>
                 </motion.div>
               ))}
@@ -265,7 +304,12 @@ export default function Admin() {
                     </tr>
                   </thead>
                   <tbody>
-                    {MOCK_RECENT_USERS.map((user, i) => (
+                    {recentUsers.length === 0 && (
+                      <tr>
+                        <td colSpan={3} className="py-6 text-sm text-text-gray text-center">Aucun utilisateur pour le moment.</td>
+                      </tr>
+                    )}
+                    {recentUsers.map((user, i) => (
                       <tr key={i} className="border-b border-light-gray last:border-0">
                         <td className="py-3 pr-4 text-sm text-navy">{user.email}</td>
                         <td className="py-3 pr-4 text-sm text-text-gray">{user.date}</td>
@@ -287,62 +331,41 @@ export default function Admin() {
             transition={{ duration: 0.3 }}
             className="max-w-[600px]"
           >
-            {/* Kimi API Key */}
+            {/* AI API Key info */}
             <div className="bg-white border border-mid-gray rounded-xl p-6 mb-6">
               <div className="flex items-center gap-3 mb-4">
                 <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ background: 'rgba(248,90,62,0.1)' }}>
                   <Key size={20} style={{ color: 'var(--coral)' }} />
                 </div>
                 <div>
-                  <h3 className="text-subsection text-navy">Clé API Kimi</h3>
-                  <p className="text-xs text-text-gray">Configurez la clé API pour l'optimisation IA</p>
+                  <h3 className="text-subsection text-navy">Configuration IA</h3>
+                  <p className="text-xs text-text-gray">Configuration côté serveur</p>
                 </div>
               </div>
 
-              <div className="relative mb-4">
-                <input
-                  type={showApiKey ? 'text' : 'password'}
-                  value={kimiApiKey}
-                  onChange={(e) => setKimiApiKey(e.target.value)}
-                  placeholder="sk-xxxxxxxxxxxxxxxxxxxxxxxx"
-                  className="w-full border-[1.5px] border-mid-gray rounded-xl py-3 pl-4 pr-24 text-navy outline-none focus:border-coral transition-colors font-mono text-sm"
-                />
-                <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
-                  {apiKeySaved && <Check size={18} className="text-green-500" />}
-                  <button
-                    onClick={() => setShowApiKey(!showApiKey)}
-                    className="p-1.5 rounded-lg hover:bg-light-gray text-text-gray"
-                  >
-                    {showApiKey ? <EyeOff size={18} /> : <Eye size={18} />}
-                  </button>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2 mb-4">
-                <Settings size={14} className="text-text-gray" />
+              <div className="flex items-start gap-2">
+                <Settings size={14} className="text-text-gray mt-0.5 shrink-0" />
                 <p className="text-xs text-text-gray">
-                  Cette clé est utilisée côté serveur et n'est jamais exposée aux utilisateurs.
+                  L'optimisation utilise OpenAI (<code className="font-mono bg-light-gray px-1 rounded">OPENAI_MODEL</code>).
+                  La clé <code className="font-mono bg-light-gray px-1 rounded">OPENAI_API_KEY</code> reste côté serveur et n'est jamais exposée aux utilisateurs.
+                  Pour la changer, mettez à jour le <code className="font-mono bg-light-gray px-1 rounded">.env</code> et redémarrez le serveur.
                 </p>
               </div>
-
-              <button
-                onClick={handleSaveApiKey}
-                className="text-white font-semibold px-6 py-2.5 rounded-xl transition-all duration-200 hover:scale-[1.02]"
-                style={{ background: 'var(--coral)' }}
-              >
-                {apiKeySaved ? 'Enregistré !' : 'Enregistrer'}
-              </button>
             </div>
 
             {/* Status */}
             <div className="bg-white border border-mid-gray rounded-xl p-6">
               <h3 className="text-subsection text-navy mb-4">État du service</h3>
               <div className="flex items-center gap-3">
-                <div className="w-3 h-3 rounded-full bg-green-500" />
-                <span className="text-sm text-navy font-medium">Kimi AI — Opérationnel</span>
+                <div className={`w-3 h-3 rounded-full ${serviceOk === null ? 'bg-gray-300' : serviceOk ? 'bg-green-500' : 'bg-red-500'}`} />
+                <span className="text-sm text-navy font-medium">
+                  {serviceOk === null ? 'API — Vérification…' : serviceOk ? 'API — Opérationnelle' : 'API — Injoignable'}
+                </span>
               </div>
               <p className="text-xs text-text-gray mt-2">
-                Le service d'optimisation IA est actif et fonctionne normalement.
+                {serviceOk === false
+                  ? "Le serveur API ne répond pas. Vérifiez qu'il est démarré."
+                  : 'Statut basé sur la disponibilité du serveur API.'}
               </p>
             </div>
           </motion.div>
@@ -364,17 +387,24 @@ export default function Admin() {
                       <th className="text-left text-xs font-semibold text-text-gray uppercase tracking-wider pb-3 pr-4">Email</th>
                       <th className="text-left text-xs font-semibold text-text-gray uppercase tracking-wider pb-3 pr-4">Inscription</th>
                       <th className="text-left text-xs font-semibold text-text-gray uppercase tracking-wider pb-3 pr-4">CVs</th>
+                      <th className="text-left text-xs font-semibold text-text-gray uppercase tracking-wider pb-3 pr-4">Optimisations</th>
                       <th className="text-left text-xs font-semibold text-text-gray uppercase tracking-wider pb-3">Statut</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {MOCK_RECENT_USERS.map((user, i) => (
+                    {recentUsers.length === 0 && (
+                      <tr>
+                        <td colSpan={5} className="py-6 text-sm text-text-gray text-center">Aucun utilisateur pour le moment.</td>
+                      </tr>
+                    )}
+                    {recentUsers.map((user, i) => (
                       <tr key={i} className="border-b border-light-gray last:border-0">
                         <td className="py-3 pr-4 text-sm text-navy">{user.email}</td>
                         <td className="py-3 pr-4 text-sm text-text-gray">{user.date}</td>
                         <td className="py-3 pr-4 text-sm text-navy font-medium">{user.cvs}</td>
+                        <td className="py-3 pr-4 text-sm text-navy font-medium">{user.optimizations}</td>
                         <td className="py-3">
-                          <span className="text-xs px-2.5 py-1 rounded-full bg-green-50 text-green-600 font-medium">
+                          <span className="text-xs px-2.5 py-1 rounded-full font-medium bg-green-50 text-green-600">
                             Actif
                           </span>
                         </td>
