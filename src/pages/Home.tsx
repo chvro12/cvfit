@@ -74,8 +74,8 @@ function HeroSection() {
             style={{ color: 'rgba(255,255,255,0.75)' }}
           >
             Collez une offre d'emploi, uploadez votre CV, et laissez l'IA faire
-            le reste. Vos mots-clés extraits, votre contenu réécrit, votre mise
-            en forme préservée.
+            le reste. Vos mots-clés sont extraits, votre contenu est réécrit,
+            puis votre CV est reconstruit dans un format clair et lisible par les ATS.
           </motion.p>
 
           {/* CTA Group */}
@@ -306,7 +306,7 @@ function FeaturesSection() {
 
   const featuresList = [
     'Mots-clés extraits automatiquement de l\'offre',
-    'Contenu enrichi et aligné sur l\'offre pour maximiser votre score',
+    'Contenu enrichi et aligné sur l\'offre pour améliorer la correspondance',
     'Chaque modification validée par vous, une par une',
     'Score ATS avant / après pour mesurer le gain',
   ]
@@ -354,7 +354,7 @@ function FeaturesSection() {
               transition={{ duration: 0.5, delay: 0.1, ease: easeOutExpo }}
               className="text-section-mobile sm:text-section-tablet lg:text-section text-navy mb-5"
             >
-              Votre design préservé. Votre contenu optimisé.
+              Un CV plus clair, plus ciblé et plus lisible par les ATS.
             </motion.h2>
             <motion.p
               initial={{ opacity: 0, y: 25 }}
@@ -363,9 +363,9 @@ function FeaturesSection() {
               className="text-body-large mb-6"
               style={{ color: 'var(--dark-gray)' }}
             >
-              CVFit ne change pas l'apparence de votre CV. Il réécrit
-              intelligemment le contenu pour matcher chaque offre d'emploi. Vos
-              colonnes, vos couleurs, votre photo — tout reste en place.
+              CVFit extrait le contenu utile de votre CV, le compare à l'offre
+              et vous aide à reconstruire une version propre, ciblée et facile
+              à relire avant l'envoi.
             </motion.p>
 
             {/* Feature list */}

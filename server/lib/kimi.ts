@@ -162,7 +162,7 @@ export async function generateOptimizations(
   }
 
   const content = await callAI(
-    `Tu es un expert CV/ATS senior. Objectif prioritaire: MAXIMISER le score ATS du CV pour ce poste.
+    `Tu es un expert CV/ATS senior. Objectif prioritaire: AMELIORER fortement la correspondance entre le CV et ce poste, sans inventer le parcours.
 Passe en revue CHAQUE section du CV, dans cet ordre: Titre, Profil, chaque Experience professionnelle (TOUTES, une par une), Competences, Formation, Langues, Certifications, Passions/Centres d'interet.
 Retourne une optimisation pour CHAQUE section presente dans le CV. Ne saute une section que si elle est deja PARFAITEMENT alignee sur l'offre (cas exceptionnel).
 IMPORTANT: les sections Langues, Certifications et Passions doivent TOUJOURS etre optimisees quand elles existent dans le CV — leur reformulation orientee poste apporte systematiquement de la valeur ATS.
@@ -182,14 +182,14 @@ Regles d'optimisation:
 - Integre un MAXIMUM de mots-cles de l'offre, avec la formulation EXACTE de l'offre (les ATS matchent sur les termes exacts) — y compris les competences implicites ou adjacentes au parcours.
 - Titre: aligne-le sur l'intitule EXACT du poste de l'offre, complete par 2-4 competences cles.
 - Profil: 2-3 phrases denses reliant le parcours aux exigences de l'offre, avec les mots-cles majeurs.
-- Experiences: reecris chaque contenu en 3 a 5 bullets percutants. Verbes d'action forts en debut de bullet, chiffres d'impact raisonnables et credibles quand ils manquent (%, delais, volumes). Dans "apres": intitule du poste sur la premiere ligne, puis une ligne par bullet commencant par "• ". Tu peux ajuster l'intitule s'il reste credible.
+- Experiences: reecris chaque contenu en 3 a 5 bullets percutants. Verbes d'action forts en debut de bullet. Conserve uniquement les chiffres, volumes, delais, budgets ou resultats deja presents dans le CV; n'en invente jamais. Dans "apres": intitule du poste sur la premiere ligne, puis une ligne par bullet commencant par "• ". Tu peux ajuster l'intitule s'il reste credible.
 - Competences: liste enrichie separee par " · ", integrant tous les mots-cles manquants compatibles avec le parcours.
 - Formation: pour CHAQUE diplome, retourne une optimisation "Formation — <intitule exact du diplome>" dont "apres" est UNE ligne de description du contenu de la formation orientee vers l'offre (domaines, technologies, methodes vus pendant la formation). Ex: "Formation approfondie en architecture Big Data, Machine Learning et visualisation de donnees avancee." Ne modifie jamais l'intitule du diplome, l'ecole ni les dates.
 - Langues: transforme chaque niveau en capacite professionnelle utile pour CE poste, une ligne par langue au format "Langue : niveau — capacite". Ex: "Anglais : Professionnel (B2) — Capacite a presenter des insights en equipe". Garde le niveau reel (B2 reste B2).
 - Certifications: reordonne et reformule pour mettre en avant celles pertinentes pour l'offre, avec les mots-cles exacts, une ligne par certification au format "Nom : apport pour le poste".
 - Passions: reformule chaque centre d'interet au format "Passion : qualite utile au poste", une ligne par passion. Ex: "Resolution de problemes : Passion pour l'analyse de mecanismes complexes et la transformation de donnees brutes en solutions actionnables."
 - Pour les acronymes, ecris les deux formes: acronyme + forme complete (ex: "SEO (Search Engine Optimization)").
-- Amplifications plausibles autorisees, mais LIMITES ABSOLUES: n'invente jamais de diplome, d'employeur, de certification nominative, ni de dates. Entreprises et periodes restent inchangees.
+- Reformulations orientees poste autorisees, mais LIMITES ABSOLUES: n'invente jamais de diplome, d'employeur, de certification nominative, de date, de chiffre, de resultat, d'outil ou de competence non soutenue par le CV. Entreprises et periodes restent inchangees.
 - Dans "avant", recopie le texte original exact de la section (ou son resume fidele).
 - Retourne uniquement un JSON object valide, sans markdown:
 {"optimizations":[{"section":"Titre","avant":"texte original","apres":"texte optimise"},{"section":"Experience — Poste | Entreprise","avant":"texte original","apres":"Intitule du poste\\n• bullet 1\\n• bullet 2"},{"section":"Formation — Master Big Data","avant":"Master Big Data - ESGI","apres":"Formation approfondie en architecture Big Data, Machine Learning et visualisation de donnees avancee."},{"section":"Langues","avant":"Anglais (B2)","apres":"Anglais : Professionnel (B2) — Capacite a presenter des insights en equipe"},{"section":"Passions","avant":"Football","apres":"Football : esprit d'equipe et regularite dans l'effort"}]}`,
@@ -409,12 +409,14 @@ export function estimateOptimizedScore(
   // Reecriture complete (titre aligne, verbes d'action, chiffres, sections standard) :
   // gains de clarte, structure et adequation d'experience.
   const improvementGain = Math.min(14, 4 + 2 * optimizationsCount)
-  // Un CV optimise dont TOUS les mots-cles de l'offre sont couverts atteint 100.
-  // Chaque mot-cle encore manquant retire 4 points a ce plafond.
-  const optimizedCeiling = 100 - missingAfter.length * 4
+  // Le score reste un indicateur interne : couvrir les mots-cles aide, mais ne
+  // garantit pas une adequation parfaite au poste ni le comportement de chaque ATS.
+  const criticalGapPenalty = missingAfter.length * 5
+  const evidencePenalty = analysis.blockingIssues.length * 3
+  const optimizedCeiling = 96 - criticalGapPenalty - evidencePenalty
   const score = Math.max(
     analysis.score,
-    Math.min(100, Math.max(optimizedCeiling, analysis.score + coverageGain + improvementGain)),
+    Math.min(98, Math.max(0, Math.max(optimizedCeiling, analysis.score + coverageGain + improvementGain))),
   )
   return { score, missingAfter }
 }

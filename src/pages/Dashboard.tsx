@@ -2160,22 +2160,27 @@ export default function Dashboard() {
 
                           {/* Score ATS gauges (uniquement si calcules) */}
                           {atsScore !== null && atsScoreBefore !== null && (
-                            <div className="flex items-center justify-center gap-4 mb-4">
-                              <AtsGauge
-                                value={atsScoreBefore}
-                                label="AVANT"
-                              />
-                              <div className="flex flex-col items-center px-2">
-                                <span className="text-[13px] font-bold" style={{ color: atsScore >= atsScoreBefore ? '#10B981' : '#EF4444' }}>
-                                  {atsScore - atsScoreBefore >= 0 ? '+' : ''}{atsScore - atsScoreBefore}
-                                </span>
-                                <ArrowLeft size={14} className="rotate-180" style={{ color: atsScore >= atsScoreBefore ? '#10B981' : '#EF4444' }} />
+                            <div className="mb-4 flex flex-col items-center gap-2">
+                              <div className="flex items-center justify-center gap-4">
+                                <AtsGauge
+                                  value={atsScoreBefore}
+                                  label="AVANT"
+                                />
+                                <div className="flex flex-col items-center px-2">
+                                  <span className="text-[13px] font-bold" style={{ color: atsScore >= atsScoreBefore ? '#10B981' : '#EF4444' }}>
+                                    {atsScore - atsScoreBefore >= 0 ? '+' : ''}{atsScore - atsScoreBefore}
+                                  </span>
+                                  <ArrowLeft size={14} className="rotate-180" style={{ color: atsScore >= atsScoreBefore ? '#10B981' : '#EF4444' }} />
+                                </div>
+                                <AtsGauge
+                                  value={atsScore}
+                                  label="MAINTENANT"
+                                  isAfter
+                                />
                               </div>
-                              <AtsGauge
-                                value={atsScore}
-                                label="MAINTENANT"
-                                isAfter
-                              />
+                              <p className="max-w-[520px] text-center text-[11px] leading-relaxed text-text-gray">
+                                Score indicatif basé sur la correspondance entre l'offre et le CV. Il aide à prioriser les améliorations, sans garantir le résultat d'un ATS ou d'un recruteur.
+                              </p>
                             </div>
                           )}
 

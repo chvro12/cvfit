@@ -56,7 +56,7 @@ generationsRouter.post('/', requireAuth, async (req: AuthedRequest, res, next) =
       let estimate = estimateOptimizedScore(analysis, optimizedText, finalOptimizations.length)
 
       // 4. Passe de verification : s'il reste des mots-cles non couverts,
-      //    une mini-passe ciblee les integre dans Profil / Competences (objectif 100%).
+      //    une mini-passe ciblee les integre dans Profil / Competences quand c'est credible.
       if (estimate.missingAfter.length > 0) {
         try {
           const reinforced = await reinforceMissingKeywords(document.extractedText, input.jobOffer, estimate.missingAfter)
