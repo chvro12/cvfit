@@ -1624,66 +1624,6 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* ═══════ Desktop Sidebar ═══════ */}
-      {currentStep !== 4 && (
-        <aside className="hidden lg:flex flex-col w-[380px] min-w-[380px] bg-white border-r border-mid-gray sticky top-[68px] h-[calc(100dvh-68px)] px-6 py-8 shrink-0">
-          <div className="mb-6">
-            <h3 className="text-subsection text-navy mb-3">Votre adaptation</h3>
-            <div className="w-full h-1.5 bg-light-gray rounded-full overflow-hidden">
-              <motion.div
-                className="h-full rounded-full"
-                style={{ background: 'var(--coral)' }}
-                initial={{ width: 0 }}
-                animate={{ width: `${progressPercent}%` }}
-                transition={{ duration: 0.4, ease: easeSmooth }}
-              />
-            </div>
-            <p className="text-caption text-text-gray mt-2">Etape {currentStep} sur 4</p>
-          </div>
-
-          <nav className="flex flex-col gap-1">
-            {stepItems.map((s) => {
-              const completed = currentStep > s.num
-              const active = currentStep === s.num
-              return (
-                <motion.button
-                  key={s.num}
-                  className="flex items-center gap-3 px-3 py-3.5 rounded-xl text-left w-full transition-colors duration-200"
-                  onClick={() => { if (completed) goToStep(s.num as Step, -1) }}
-                  animate={{ backgroundColor: active ? 'var(--coral-50)' : 'transparent' }}
-                  whileHover={!active && !completed ? { backgroundColor: 'var(--navy-50)' } : {}}
-                  style={{ cursor: completed ? 'pointer' : 'default' }}
-                >
-                  <div
-                    className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-all duration-300"
-                    style={{
-                      background: completed ? 'var(--success)' : active ? 'var(--coral)' : 'var(--light-gray)',
-                      color: completed || active ? '#fff' : 'var(--text-gray)',
-                    }}
-                  >
-                    {completed ? <Check size={16} /> : (
-                      <span className="text-small font-semibold">{s.num}</span>
-                    )}
-                  </div>
-                  <span className={`text-caption transition-colors duration-200 ${
-                    active ? 'text-navy font-semibold' : completed ? 'text-navy font-medium' : 'text-text-gray'
-                  }`}>
-                    {s.label}
-                  </span>
-                </motion.button>
-              )
-            })}
-          </nav>
-
-          <div className="mt-auto pt-6 border-t border-mid-gray">
-            <p className="text-caption text-text-gray">Besoin d'aide ?</p>
-            <a href="mailto:contact@cvfit.fr" className="text-caption hover:underline" style={{ color: 'var(--coral)' }}>
-              Contactez-nous
-            </a>
-          </div>
-        </aside>
-      )}
-
       {/* ═══════ Main Content ═══════ */}
       <main className="flex-1 flex flex-col min-w-0">
         <div className={`flex-1 ${currentStep === 4 ? 'px-0 py-0' : 'px-6 lg:px-12 py-8 lg:py-12'}`}>
