@@ -56,24 +56,26 @@ export type KeywordSet = z.infer<typeof keywordSchema>
 export type OptimizationResult = z.infer<typeof optimizationItemSchema>
 export type StructuredCv = z.infer<typeof structuredCvSchema>
 
-/* Fournisseur unique : OpenAI. Pas de bascule vers un autre fournisseur. */
-async function callAI(systemPrompt: string, userPrompt: string, options: { json?: boolean; maxTokens?: number } = {}) {
+type CallOptions = { json?: boolean; maxTokens?: number; deep?: boolean }
+
+/* Fournisseur unique : OpenAI. Mode "deep" = modele plus puissant (approfondi). */
+async function callAI(systemPrompt: string, userPrompt: string, options: CallOptions = {}) {
   return callOpenAI(systemPrompt, userPrompt, options)
 }
 
-async function callOpenAI(systemPrompt: string, userPrompt: string, options: { json?: boolean; maxTokens?: number } = {}) {
+async function callOpenAI(systemPrompt: string, userPrompt: string, options: CallOptions = {}) {
   if (!env.OPENAI_API_KEY) {
     throw new Error('OPENAI_API_KEY est requis : configurez-le dans le fichier .env.')
   }
 
   const body: Record<string, unknown> = {
-    model: env.OPENAI_MODEL,
+    model: options.deep ? env.OPENAI_MODEL_DEEP : env.OPENAI_MODEL,
     messages: [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userPrompt },
     ],
     max_tokens: options.maxTokens ?? 12000,
-    temperature: 0.2,
+    temperature: options.deep ? 0.35 : 0.2,
   }
 
   if (options.json) {
@@ -139,6 +141,24 @@ Classe uniquement les mots-cles explicitement presents ou clairement requis dans
 export interface OptimizationContext {
   keywords?: KeywordSet
   missingKeywords?: string[]
+  experienceLevel?: string
+  situation?: string
+}
+
+const EXPERIENCE_LEVEL_HINT: Record<string, string> = {
+  etudiant: "Candidat etudiant/stagiaire: valorise projets academiques, stages et competences transferables; ton junior mais ambitieux.",
+  junior: "Candidat junior (0-2 ans): met en avant l'apprentissage rapide, les premieres realisations concretes et le potentiel.",
+  confirme: "Candidat confirme (3-5 ans): insiste sur l'autonomie, les resultats mesurables et la maitrise technique.",
+  senior: "Candidat senior (6-10 ans): met en avant l'expertise, le pilotage de projets et l'impact business.",
+  expert: "Candidat expert/lead (10+ ans): valorise le leadership, la vision strategique, l'encadrement et l'influence.",
+}
+
+const SITUATION_HINT: Record<string, string> = {
+  en_poste: "En poste, recherche discrete: ton mesure et professionnel.",
+  recherche_active: "En recherche active: CV percutant et immediatement operationnel pour ce poste.",
+  reconversion: "En reconversion: mets fortement en avant les competences TRANSFERABLES vers ce nouveau domaine, reformule le parcours passe dans le vocabulaire du poste vise.",
+  jeune_diplome: "Jeune diplome: valorise la formation, les projets, stages et l'adaptabilite; compense le manque d'experience par les competences acquises.",
+  premier_emploi: "Recherche premier emploi: met en avant formation, projets et motivation; ton enthousiaste et credible.",
 }
 
 export async function generateOptimizations(
@@ -160,12 +180,15 @@ export async function generateOptimizations(
   if (context.missingKeywords && context.missingKeywords.length > 0) {
     keywordLines.push(`Mots-cles actuellement ABSENTS du CV (a integrer en priorite dans les sections concernees): ${context.missingKeywords.join(', ')}`)
   }
+  const levelHint = context.experienceLevel ? EXPERIENCE_LEVEL_HINT[context.experienceLevel] : undefined
+  if (levelHint) keywordLines.push(`Profil candidat: ${levelHint}`)
+  const situationHint = context.situation ? SITUATION_HINT[context.situation] : undefined
+  if (situationHint) keywordLines.push(`Situation: ${situationHint}`)
 
   const content = await callAI(
-    `Tu es un expert CV/ATS senior. Objectif prioritaire: AMELIORER fortement la correspondance entre le CV et ce poste, sans inventer le parcours.
+    `Tu es un expert CV/ATS senior et redacteur de CV agressif. Objectif prioritaire ABSOLU: MAXIMISER la correspondance entre le CV et CETTE offre pour decrocher l'entretien. Sois ambitieux et offensif dans la reformulation — un candidat qualifie doit apparaitre comme le candidat IDEAL pour ce poste.
 Passe en revue CHAQUE section du CV, dans cet ordre: Titre, Profil, chaque Experience professionnelle (TOUTES, une par une), Competences, Formation, Langues, Certifications, Passions/Centres d'interet.
-Retourne une optimisation pour CHAQUE section presente dans le CV. Ne saute une section que si elle est deja PARFAITEMENT alignee sur l'offre (cas exceptionnel).
-IMPORTANT: les sections Langues, Certifications et Passions doivent TOUJOURS etre optimisees quand elles existent dans le CV — leur reformulation orientee poste apporte systematiquement de la valeur ATS.
+Retourne une optimisation pour CHAQUE section presente dans le CV. Reformule TOUT, meme ce qui semble deja correct — il y a toujours moyen de mieux coller a l'offre.
 Ne cree pas de section absente du CV.
 
 Nommage OBLIGATOIRE du champ "section":
@@ -178,18 +201,18 @@ Nommage OBLIGATOIRE du champ "section":
 - "Certifications" pour les certifications
 - "Passions" pour les passions/centres d'interet/hobbies
 
-Regles d'optimisation:
-- Integre un MAXIMUM de mots-cles de l'offre, avec la formulation EXACTE de l'offre (les ATS matchent sur les termes exacts) — y compris les competences implicites ou adjacentes au parcours.
-- Titre: aligne-le sur l'intitule EXACT du poste de l'offre, complete par 2-4 competences cles.
-- Profil: 2-3 phrases denses reliant le parcours aux exigences de l'offre, avec les mots-cles majeurs.
-- Experiences: reecris chaque contenu en 3 a 5 bullets percutants. Verbes d'action forts en debut de bullet. Conserve uniquement les chiffres, volumes, delais, budgets ou resultats deja presents dans le CV; n'en invente jamais. Dans "apres": intitule du poste sur la premiere ligne, puis une ligne par bullet commencant par "• ". Tu peux ajuster l'intitule s'il reste credible.
-- Competences: liste enrichie separee par " · ", integrant tous les mots-cles manquants compatibles avec le parcours.
-- Formation: pour CHAQUE diplome, retourne une optimisation "Formation — <intitule exact du diplome>" dont "apres" est UNE ligne de description du contenu de la formation orientee vers l'offre (domaines, technologies, methodes vus pendant la formation). Ex: "Formation approfondie en architecture Big Data, Machine Learning et visualisation de donnees avancee." Ne modifie jamais l'intitule du diplome, l'ecole ni les dates.
-- Langues: transforme chaque niveau en capacite professionnelle utile pour CE poste, une ligne par langue au format "Langue : niveau — capacite". Ex: "Anglais : Professionnel (B2) — Capacite a presenter des insights en equipe". Garde le niveau reel (B2 reste B2).
-- Certifications: reordonne et reformule pour mettre en avant celles pertinentes pour l'offre, avec les mots-cles exacts, une ligne par certification au format "Nom : apport pour le poste".
-- Passions: reformule chaque centre d'interet au format "Passion : qualite utile au poste", une ligne par passion. Ex: "Resolution de problemes : Passion pour l'analyse de mecanismes complexes et la transformation de donnees brutes en solutions actionnables."
+Regles d'optimisation (mode offensif):
+- Integre le MAXIMUM de mots-cles de l'offre, avec la formulation EXACTE de l'offre (les ATS matchent sur les termes exacts). Va au-dela de l'evident: revendique aussi les competences IMPLICITES, ADJACENTES ou DECOULANT logiquement du parcours (ex: qui a construit des dashboards maitrise la datavisualisation et le storytelling data; qui a code en Python connait l'automatisation et le scripting; qui a gere une equipe pratique le leadership et la gestion de projet). En cas de doute raisonnable, REVENDIQUE plutot que d'omettre.
+- Titre: aligne-le sur l'intitule EXACT du poste de l'offre, complete par 2-4 competences cles de l'offre.
+- Profil: 2-3 phrases denses, vendeuses, qui positionnent le candidat comme parfaitement aligne sur les exigences de l'offre, avec les mots-cles majeurs et un niveau de seniorite qui matche l'offre.
+- Experiences: reecris chaque contenu en 3 a 5 bullets percutants et ambitieux. Verbes d'action forts (Pilote, Concu, Deploye, Optimise, Dirige...). Ajoute des indicateurs d'impact PLAUSIBLES et credibles pour le poste occupe quand l'experience implique une echelle mesurable (%, volumes, delais, gains) — reste realiste et defendable en entretien. Reformule les responsabilites vers le vocabulaire et les missions de l'offre. Dans "apres": intitule du poste sur la premiere ligne, puis une ligne par bullet commencant par "• ". Ajuste l'intitule du poste pour le rapprocher de l'offre tant qu'il reste credible pour cette experience.
+- Competences: liste enrichie separee par " · ", integrant TOUS les mots-cles de l'offre compatibles avec le parcours, y compris les outils et methodes standards du metier que le candidat maitrise forcement au vu de son experience.
+- Formation: pour CHAQUE diplome, retourne "Formation — <intitule exact du diplome>" dont "apres" est UNE ligne decrivant le contenu de la formation oriente vers l'offre (domaines, technologies, methodes). Ne modifie jamais l'intitule du diplome, l'ecole ni les dates.
+- Langues: transforme chaque niveau en capacite professionnelle utile pour CE poste, une ligne par langue "Langue : niveau — capacite". Garde le niveau reel (B2 reste B2).
+- Certifications: reordonne et reformule pour mettre en avant celles pertinentes pour l'offre, une ligne "Nom : apport pour le poste".
+- Passions: reformule chaque centre d'interet "Passion : qualite utile au poste", une ligne par passion.
 - Pour les acronymes, ecris les deux formes: acronyme + forme complete (ex: "SEO (Search Engine Optimization)").
-- Reformulations orientees poste autorisees, mais LIMITES ABSOLUES: n'invente jamais de diplome, d'employeur, de certification nominative, de date, de chiffre, de resultat, d'outil ou de competence non soutenue par le CV. Entreprises et periodes restent inchangees.
+- SEULES LIMITES (pour rester defendable en entretien et en verification d'antecedents) : ne fabrique JAMAIS un employeur, un intitule d'ecole, un diplome, une periode/date, ni une certification nommee qui n'existent pas dans le CV. Les noms d'entreprises et les periodes restent EXACTEMENT inchanges. Tout le reste (competences, outils, reformulations, impact quantifie plausible, niveau de seniorite) peut etre pousse au maximum credible.
 - Dans "avant", recopie le texte original exact de la section (ou son resume fidele).
 - Retourne uniquement un JSON object valide, sans markdown:
 {"optimizations":[{"section":"Titre","avant":"texte original","apres":"texte optimise"},{"section":"Experience — Poste | Entreprise","avant":"texte original","apres":"Intitule du poste\\n• bullet 1\\n• bullet 2"},{"section":"Formation — Master Big Data","avant":"Master Big Data - ESGI","apres":"Formation approfondie en architecture Big Data, Machine Learning et visualisation de donnees avancee."},{"section":"Langues","avant":"Anglais (B2)","apres":"Anglais : Professionnel (B2) — Capacite a presenter des insights en equipe"},{"section":"Passions","avant":"Football","apres":"Football : esprit d'equipe et regularite dans l'effort"}]}`,
@@ -202,6 +225,106 @@ RAPPEL: si le CV contient des sections Langues, Certifications ou Passions/Centr
     return normalizeOptimizations(optimizationResponseSchema.parse(parseJsonObject(content)).optimizations)
   } catch {
     return normalizeOptimizations(optimizationSchema.parse(parseJsonArray(content)))
+  }
+}
+
+/* ── controle de couverture : detecte les sections du CV structure qui n'ont
+      recu AUCUNE optimisation, pour garantir que tout le CV est passe au crible ── */
+export interface MissingSection {
+  section: string
+  original: string
+}
+
+const normSec = (s: string) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim()
+
+export function findUncoveredSections(cv: StructuredCv, optimizations: OptimizationResult[]): MissingSection[] {
+  const secNames = optimizations.map(opt => normSec(opt.section))
+  const hasSection = (predicate: (name: string) => boolean) => secNames.some(predicate)
+  const missing: MissingSection[] = []
+
+  if (cv.title && !hasSection(name => name.startsWith('titre') || name.startsWith('title'))) {
+    missing.push({ section: 'Titre', original: cv.title })
+  }
+  if (cv.profile && !hasSection(name => name.startsWith('profil') || name.includes('resume'))) {
+    missing.push({ section: 'Profil', original: cv.profile })
+  }
+  cv.experiences.forEach(exp => {
+    if (!exp.title && exp.bullets.length === 0) return
+    const company = normSec(exp.company)
+    const title = normSec(exp.title)
+    const covered = optimizations.some(opt => {
+      const hay = `${normSec(opt.section)} ${normSec(opt.avant)}`
+      const isExp = hay.includes('experience')
+      return isExp && ((company.length > 2 && hay.includes(company)) || (title.length > 3 && normSec(opt.section).includes(title.slice(0, 20))))
+    })
+    if (!covered) {
+      missing.push({
+        section: `Experience — ${exp.title} | ${exp.company}`,
+        original: `${exp.title}${exp.company ? ` — ${exp.company}` : ''}\n${exp.bullets.map(b => `• ${b}`).join('\n')}`,
+      })
+    }
+  })
+  if (cv.skills.length > 0 && !hasSection(name => name.includes('competence') || name.includes('skill'))) {
+    missing.push({ section: 'Competences', original: cv.skills.join(' · ') })
+  }
+  cv.education.forEach(edu => {
+    if (!edu.degree) return
+    const degree = normSec(edu.degree)
+    const covered = optimizations.some(opt => normSec(opt.section).startsWith('formation') && degree.length > 2 && normSec(opt.section).includes(degree.slice(0, 22)))
+    if (!covered) {
+      missing.push({ section: `Formation — ${edu.degree}`, original: [edu.degree, edu.school, edu.description].filter(Boolean).join(' — ') })
+    }
+  })
+  if (cv.languages.length > 0 && !hasSection(name => name.includes('langue'))) {
+    missing.push({ section: 'Langues', original: cv.languages.map(l => `${l.language} : ${l.level}`).join('\n') })
+  }
+  if (cv.certifications.length > 0 && !hasSection(name => name.includes('certification'))) {
+    missing.push({ section: 'Certifications', original: cv.certifications.join('\n') })
+  }
+  if (cv.interests.length > 0 && !hasSection(name => name.includes('passion') || name.includes('centre'))) {
+    missing.push({ section: 'Passions', original: cv.interests.join('\n') })
+  }
+  return missing
+}
+
+/* Passe ciblee : optimise UNIQUEMENT les sections non couvertes, meme regles agressives. */
+export async function completeMissingSections(
+  cvText: string,
+  offerText: string,
+  missing: MissingSection[],
+  context: OptimizationContext = {},
+): Promise<OptimizationResult[]> {
+  if (missing.length === 0) return []
+  const flat = context.keywords
+    ? [...context.keywords.technical, ...context.keywords.softSkills, ...context.keywords.experience].filter(Boolean)
+    : []
+  const sectionsBlock = missing.map((m, i) => `${i + 1}. section EXACTE a renvoyer = "${m.section}"\nTexte original de la section:\n${m.original}`).join('\n\n')
+  const content = await callAI(
+    `Tu es un expert CV/ATS agressif. Optimise UNIQUEMENT les sections listees ci-dessous pour coller au maximum a l'offre.
+Regles: revendique les competences implicites/adjacentes, integre les mots-cles EXACTS de l'offre, reformulations offensives et impact plausible. Ne fabrique jamais employeur, diplome, ecole, date ni certification nommee inexistants.
+Format de sortie par section:
+- Titre: intitule aligne sur l'offre + 2-4 competences cles.
+- Profil: 2-3 phrases vendeuses.
+- Experience: premiere ligne = intitule du poste, puis une ligne par bullet commencant par "• " (3 a 5 bullets).
+- Competences: liste separee par " · ".
+- Formation: une ligne de description orientee offre.
+- Langues: "Langue : niveau — capacite", une par ligne.
+- Certifications / Passions: "Nom : apport pour le poste", une par ligne.
+IMPORTANT: retourne EXACTEMENT une optimisation par section demandee, avec le champ "section" STRICTEMENT IDENTIQUE a celui fourni.
+Retourne uniquement un JSON object valide, sans markdown:
+{"optimizations":[{"section":"...","avant":"texte original","apres":"texte optimise"}]}`,
+    `CV complet (contexte):\n${cvText.slice(0, 10000)}\n\nOffre:\n${offerText.slice(0, 6000)}\n${flat.length > 0 ? `\nMots-cles cibles: ${flat.join(', ')}\n` : ''}
+Sections a optimiser (et UNIQUEMENT celles-ci):\n${sectionsBlock}`,
+    { json: true, maxTokens: 5000 },
+  )
+  try {
+    return normalizeOptimizations(optimizationResponseSchema.parse(parseJsonObject(content)).optimizations)
+  } catch {
+    try {
+      return normalizeOptimizations(optimizationSchema.parse(parseJsonArray(content)))
+    } catch {
+      return []
+    }
   }
 }
 
@@ -326,11 +449,12 @@ export async function reinforceMissingKeywords(
   missingKeywords: string[],
 ): Promise<OptimizationResult[]> {
   const content = await callAI(
-    `Tu es un expert CV/ATS. Des mots-cles de l'offre manquent encore dans le CV optimise.
-Integre CHACUN de ces mots-cles, avec la formulation EXACTE fournie, dans une version enrichie des sections Profil et Competences — de facon naturelle et credible pour ce parcours.
+    `Tu es un expert CV/ATS offensif. Des mots-cles de l'offre manquent encore dans le CV optimise.
+Integre IMPERATIVEMENT CHACUN de ces mots-cles, avec la formulation EXACTE fournie, dans une version enrichie des sections Profil et Competences. Revendique ces competences avec assurance des lors qu'elles sont plausibles au vu du parcours — n'omets aucun mot-cle. Ajoute-les aussi dans la liste de competences meme si le lien est indirect mais credible.
+Reste defendable en entretien: n'invente pas d'employeur, de diplome ni de date, mais pousse au maximum la revendication de competences et d'outils.
 Retourne uniquement un JSON valide, sans markdown:
 {"optimizations":[{"section":"Profil","avant":"texte original","apres":"profil enrichi"},{"section":"Competences","avant":"texte original","apres":"liste enrichie separee par \\" · \\""}]}`,
-    `CV:\n${cvText.slice(0, 8000)}\n\nOffre:\n${offerText.slice(0, 5000)}\n\nMots-cles a integrer IMPERATIVEMENT (formulation exacte): ${missingKeywords.join(', ')}`,
+    `CV:\n${cvText.slice(0, 8000)}\n\nOffre:\n${offerText.slice(0, 5000)}\n\nMots-cles a integrer IMPERATIVEMENT (formulation exacte, AUCUN ne doit rester absent): ${missingKeywords.join(', ')}`,
     { json: true, maxTokens: 2000 },
   )
   try {

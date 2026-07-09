@@ -188,11 +188,11 @@ export async function uploadCvDocument(cv: File, photo?: File | null): Promise<U
 export async function createGeneration(
   documentId: string,
   jobOffer: string,
-  mode = 'preserve',
+  options: { mode?: string; experienceLevel?: string; situation?: string } = {},
 ): Promise<GenerationResult> {
   const data = await api<{ generation: GenerationResult }>('/api/generations', {
     method: 'POST',
-    body: JSON.stringify({ documentId, jobOffer, mode }),
+    body: JSON.stringify({ documentId, jobOffer, mode: options.mode ?? 'preserve', experienceLevel: options.experienceLevel, situation: options.situation }),
   })
   return data.generation
 }

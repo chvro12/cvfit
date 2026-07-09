@@ -433,6 +433,16 @@ export default function Dashboard() {
   const [showKeywords, setShowKeywords] = useState(false)
   const [isExtractingKeywords, setIsExtractingKeywords] = useState(false)
 
+  /* ── step 2b: personnalisation (avant generation) ── */
+  const [experienceLevel, setExperienceLevel] = useState<string>('confirme')
+  const [situation, setSituation] = useState<string>('recherche_active')
+
+  /* ── liens editables (LinkedIn / Portfolio / GitHub / perso) ── */
+  const [links, setLinks] = useState<Array<{ id: string; label: string; url: string }> | null>(null)
+
+  /* ── step 3: revue section par section ── */
+  const [reviewSection, setReviewSection] = useState(0)
+
   /* ── step 3: AI diff review ── */
   const [diffItems, setDiffItems] = useState<DiffItem[]>([])
   const [isProcessingDiffs, setIsProcessingDiffs] = useState(false)
@@ -501,7 +511,6 @@ export default function Dashboard() {
   const canContinueStep1 = cvFile !== null || selectedDocumentId !== null
   const canContinueStep2 = jobOffer.trim().length >= 50
   const allDiffsReviewed = diffItems.every(d => d.status === 'approved' || d.status === 'rejected')
-  const approvedCount = diffItems.filter(d => d.status === 'approved').length
 
   /* ── unsaved-changes guard ── */
   useEffect(() => {
@@ -540,6 +549,7 @@ export default function Dashboard() {
       apres: opt.apres,
       status: 'pending' as DiffStatus,
     })))
+    setReviewSection(0)
     if (generation.structuredCv) {
       const structured = generation.structuredCv
       const hasDiffFor = (pattern: RegExp) => optimizations.some(opt => pattern.test(opt.section))
@@ -552,10 +562,25 @@ export default function Dashboard() {
         if (s.id === 'profil') return { ...s, visible: structured.profile.length > 0 || hasDiffFor(/profil/i) }
         return s
       }))
+      /* liens editables initialises depuis le CV structure (+ regex de secours) */
+      const seedLinks: Array<{ id: string; label: string; url: string }> = []
+      const seen = new Set<string>()
+      const pushLink = (label: string, raw: string) => {
+        const url = normalizeContactLink(raw.trim())
+        if (!url || !isValidContactLink(url) || seen.has(url.toLowerCase())) return
+        seen.add(url.toLowerCase())
+        seedLinks.push({ id: `link-${seedLinks.length}`, label, url })
+      }
+      if (structured.contact.linkedin) pushLink('LinkedIn', structured.contact.linkedin)
+      if (structured.contact.portfolio) pushLink('Portfolio', structured.contact.portfolio)
+      for (const raw of cvContact?.links ?? []) {
+        pushLink(/linkedin/i.test(raw) ? 'LinkedIn' : /github/i.test(raw) ? 'GitHub' : 'Lien', raw)
+      }
+      setLinks(seedLinks)
     }
     setAtsScore(typeof generation.atsScore === 'number' ? generation.atsScore : null)
     setAtsScoreBefore(typeof generation.atsScoreBefore === 'number' ? generation.atsScoreBefore : null)
-  }, [])
+  }, [cvContact])
 
   /* ── reprise d'une generation depuis Mon espace (?generation=ID) ── */
   const [searchParams] = useSearchParams()
@@ -716,7 +741,7 @@ export default function Dashboard() {
       setProcessingSubStep(1)
       await wait(350)
       setProcessingSubStep(2)
-      const generation = await createGeneration(document.id, jobOffer, 'preserve')
+      const generation = await createGeneration(document.id, jobOffer, { experienceLevel, situation })
 
       setProcessingSubStep(3)
       if ((generation.optimizations ?? []).length === 0) {
@@ -767,14 +792,6 @@ export default function Dashboard() {
 
   const saveModifiedText = (id: string, text: string) => {
     setDiffItems(prev => prev.map(d => d.id === id ? { ...d, modifiedText: text, status: 'approved' as DiffStatus } : d))
-  }
-
-  const approveAll = () => {
-    setDiffItems(prev => prev.map(d => d.status === 'pending' || d.status === 'modifying' ? { ...d, status: 'approved' as DiffStatus } : d))
-  }
-
-  const rejectAll = () => {
-    setDiffItems(prev => prev.map(d => d.status === 'pending' || d.status === 'modifying' ? { ...d, status: 'rejected' as DiffStatus } : d))
   }
 
   /* ═══════ Step 4: CV Editor ═══════ */
@@ -1119,6 +1136,10 @@ export default function Dashboard() {
     setExperienceOrder(null)
     setSaveStatus('idle')
     setOfferUrl('')
+    setLinks(null)
+    setReviewSection(0)
+    setExperienceLevel('confirme')
+    setSituation('recherche_active')
     setPhotoPreviewUrl(prev => {
       if (prev) URL.revokeObjectURL(prev)
       return null
@@ -1232,16 +1253,78 @@ export default function Dashboard() {
     portfolio: cvData?.contact.portfolio || cvContact?.portfolio || '',
   }
   const contactLine = [contact.phone, contact.email, contact.location].filter(Boolean)
-  const contactLinks = Array.from(new Set(
+  const derivedLinks = Array.from(new Set(
     [contact.linkedin, contact.portfolio, ...(cvContact?.links ?? [])]
       .filter(Boolean)
       .map(normalizeContactLink)
       .filter(isValidContactLink),
   ))
+  /* liens edites par l'utilisateur (etape 3) prioritaires sur les liens detectes */
+  const contactLinks = links !== null
+    ? links.map(link => link.url.trim()).filter(Boolean).map(normalizeContactLink).filter(isValidContactLink)
+    : derivedLinks
   const approvedDiffs = diffItems.filter(diff => diff.status === 'approved')
   const getApprovedSectionText = (patterns: string[]) => {
     const found = approvedDiffs.find(diff => patterns.some(pattern => diff.section.toLowerCase().includes(pattern)))
     return found?.modifiedText || found?.apres
+  }
+
+  /* ── revue section par section (etape 3) ── */
+  const flatKeywords = Array.from(new Set(
+    [...keywords.technical, ...keywords.softSkills, ...keywords.experience]
+      .map(kw => kw.trim())
+      .filter(kw => kw.length >= 2),
+  ))
+  const countAddedKeywords = (diff: DiffItem) => {
+    const after = ` ${diff.apres.toLowerCase()} `
+    const before = ` ${diff.avant.toLowerCase()} `
+    return flatKeywords.filter(kw => {
+      const k = kw.toLowerCase()
+      return after.includes(k) && !before.includes(k)
+    }).length
+  }
+  const reviewGroupOf = (section: string): string => {
+    const s = section.toLowerCase()
+    if (s.startsWith('titre') || s.startsWith('title')) return 'informations'
+    if (s.startsWith('profil') || s.includes('resume') || s.includes('résumé')) return 'resume'
+    if (s.includes('experience') || s.includes('expérience') || s.startsWith('xp')) return 'experience'
+    if (s.startsWith('formation') || s.includes('education') || s.includes('éducation')) return 'formation'
+    if (s.includes('competence') || s.includes('compétence') || s.includes('skill')) return 'competences'
+    if (s.includes('langue')) return 'langues'
+    if (s.includes('certification')) return 'certifications'
+    if (s.includes('passion') || s.includes('centre')) return 'passions'
+    return 'autres'
+  }
+  const REVIEW_GROUPS: Array<{ id: string; label: string }> = [
+    { id: 'informations', label: 'Informations' },
+    { id: 'resume', label: 'Résumé' },
+    { id: 'experience', label: 'Expérience' },
+    { id: 'formation', label: 'Formation' },
+    { id: 'competences', label: 'Compétences' },
+    { id: 'langues', label: 'Langues' },
+    { id: 'certifications', label: 'Certifications' },
+    { id: 'passions', label: 'Passions' },
+    { id: 'autres', label: 'Autres' },
+  ]
+  const diffsByGroup = (groupId: string) => diffItems.filter(diff => reviewGroupOf(diff.section) === groupId)
+  const visibleReviewGroups = REVIEW_GROUPS.filter(group => group.id === 'informations' || diffsByGroup(group.id).length > 0)
+  const currentReviewGroup = visibleReviewGroups[Math.min(reviewSection, visibleReviewGroups.length - 1)]
+  const reviewGroupReviewed = (groupId: string) => diffsByGroup(groupId).every(diff => diff.status === 'approved' || diff.status === 'rejected')
+  const diffReasonFor = (diff: DiffItem): string => {
+    const group = reviewGroupOf(diff.section)
+    const added = countAddedKeywords(diff)
+    const kw = added > 0 ? ` (${added} mot${added > 1 ? 's' : ''}-clé${added > 1 ? 's' : ''} de l'offre ajouté${added > 1 ? 's' : ''})` : ''
+    switch (group) {
+      case 'informations': return `Titre aligné sur l'intitulé du poste${kw}.`
+      case 'resume': return `Profil reformulé pour refléter les exigences de l'offre${kw}.`
+      case 'experience': return `Expérience repositionnée vers les missions du poste${kw}.`
+      case 'formation': return `Formation orientée vers les compétences attendues${kw}.`
+      case 'competences': return `Compétences enrichies des mots-clés de l'offre${kw}.`
+      case 'langues': return `Niveaux traduits en atouts pour le poste${kw}.`
+      case 'certifications': return `Certifications mises en avant selon leur pertinence${kw}.`
+      case 'passions': return `Centres d'intérêt reformulés en qualités utiles au poste${kw}.`
+      default: return `Reformulation orientée vers l'offre${kw}.`
+    }
   }
   const truncateWords = (text: string, maxWords: number) => {
     const words = text.split(/\s+/).filter(Boolean)
@@ -1604,7 +1687,7 @@ export default function Dashboard() {
       {/* ═══════ Main Content ═══════ */}
       <main className="flex-1 flex flex-col min-w-0">
         <div className={`flex-1 ${currentStep === 4 ? 'px-0 py-0' : 'px-6 lg:px-12 py-8 lg:py-12'}`}>
-          <div className={currentStep === 4 ? 'h-full' : 'max-w-[720px] mx-auto'}>
+          <div className={currentStep === 4 ? 'h-full' : currentStep === 3 ? 'max-w-[1200px] mx-auto' : 'max-w-[720px] mx-auto'}>
             <AnimatePresence mode="wait" initial={false}>
               <motion.div
                 key={currentStep}
@@ -1933,6 +2016,98 @@ export default function Dashboard() {
                       )}
                     </AnimatePresence>
 
+                    {/* ─── Personnalisation : modèle + profil (révélée quand l'offre est saisie) ─── */}
+                    <AnimatePresence>
+                      {canContinueStep2 && (
+                        <motion.div
+                          initial={{ opacity: 0, y: 12 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ duration: 0.35, ease: easeOutExpo }}
+                          className="mt-8"
+                        >
+                          {/* Choix du modèle */}
+                          <h3 className="text-subsection text-navy mb-1">Choisissez votre modèle</h3>
+                          <p className="text-caption text-text-gray mb-3">Vous pourrez le modifier à tout moment dans l'éditeur.</p>
+                          <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1 mb-6">
+                            {([
+                              { id: 'pro' as Template, label: 'Pro' },
+                              { id: 'moderne' as Template, label: 'Moderne' },
+                              { id: 'essentiel' as Template, label: 'Épuré' },
+                              { id: 'prestige' as Template, label: 'Prestige' },
+                              { id: 'chronologique' as Template, label: 'Chronologique' },
+                            ]).map(tpl => (
+                              <button
+                                key={tpl.id}
+                                onClick={() => setTemplate(tpl.id)}
+                                className="flex flex-col items-center gap-1.5 shrink-0 outline-none"
+                              >
+                                <div
+                                  className="rounded-lg overflow-hidden border-2 transition-all duration-200"
+                                  style={{
+                                    borderColor: template === tpl.id ? activeAccentHex : '#E5E5E0',
+                                    boxShadow: template === tpl.id ? `0 0 0 1px ${activeAccentHex}, 0 4px 12px rgba(0,0,0,0.08)` : '0 1px 3px rgba(0,0,0,0.05)',
+                                  }}
+                                >
+                                  <TemplateThumb id={tpl.id} accent={activeAccentHex} />
+                                </div>
+                                <span className="text-[11px] font-medium" style={{ color: template === tpl.id ? activeAccentHex : '#888' }}>{tpl.label}</span>
+                              </button>
+                            ))}
+                          </div>
+
+                          {/* Niveau d'expérience */}
+                          <h4 className="text-caption font-semibold text-navy mb-2">Votre niveau d'expérience</h4>
+                          <div className="flex flex-wrap gap-2 mb-5">
+                            {([
+                              { id: 'etudiant', label: 'Étudiant / Stage' },
+                              { id: 'junior', label: 'Junior (0-2 ans)' },
+                              { id: 'confirme', label: 'Confirmé (3-5 ans)' },
+                              { id: 'senior', label: 'Senior (6-10 ans)' },
+                              { id: 'expert', label: 'Expert / Lead (10+ ans)' },
+                            ]).map(opt => (
+                              <button
+                                key={opt.id}
+                                onClick={() => setExperienceLevel(opt.id)}
+                                className="text-caption font-medium px-3.5 py-2 rounded-lg border transition-colors duration-200"
+                                style={{
+                                  borderColor: experienceLevel === opt.id ? 'var(--coral)' : 'var(--mid-gray)',
+                                  color: experienceLevel === opt.id ? 'var(--coral)' : 'var(--navy)',
+                                  background: experienceLevel === opt.id ? 'var(--coral-50)' : '#fff',
+                                }}
+                              >
+                                {opt.label}
+                              </button>
+                            ))}
+                          </div>
+
+                          {/* Situation */}
+                          <h4 className="text-caption font-semibold text-navy mb-2">Votre situation</h4>
+                          <div className="flex flex-wrap gap-2">
+                            {([
+                              { id: 'recherche_active', label: 'En recherche active' },
+                              { id: 'en_poste', label: 'En poste' },
+                              { id: 'reconversion', label: 'Reconversion' },
+                              { id: 'jeune_diplome', label: 'Jeune diplômé' },
+                              { id: 'premier_emploi', label: 'Premier emploi' },
+                            ]).map(opt => (
+                              <button
+                                key={opt.id}
+                                onClick={() => setSituation(opt.id)}
+                                className="text-caption font-medium px-3.5 py-2 rounded-lg border transition-colors duration-200"
+                                style={{
+                                  borderColor: situation === opt.id ? 'var(--coral)' : 'var(--mid-gray)',
+                                  color: situation === opt.id ? 'var(--coral)' : 'var(--navy)',
+                                  background: situation === opt.id ? 'var(--coral-50)' : '#fff',
+                                }}
+                              >
+                                {opt.label}
+                              </button>
+                            ))}
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+
                     {optimizationError && (
                       <div className="mt-6 rounded-xl border px-4 py-3" style={{ borderColor: '#FCA5A5', background: '#FEF2F2' }}>
                         <p className="text-sm font-semibold" style={{ color: '#B91C1C' }}>
@@ -1974,7 +2149,7 @@ export default function Dashboard() {
                           </>
                         ) : (
                           <>
-                            Generer mon CV
+                            Générer mon CV
                             <ChevronDown size={18} className="rotate-[-90deg]" />
                           </>
                         )}
@@ -2079,63 +2254,112 @@ export default function Dashboard() {
                       </motion.div>
                     )}
 
-                    {/* Diff results */}
-                    <AnimatePresence>
-                      {!isProcessingDiffs && !optimizationError && (
-                        <motion.div
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          transition={{ duration: 0.5 }}
-                        >
-                          {/* Header */}
-                          <div className="mb-6">
-                            <h2 className="text-section text-navy mb-2">Optimisations proposées par l&apos;IA</h2>
-                            <p className="text-body-large text-text-gray">
-                              L&apos;IA a analysé votre CV et l&apos;offre d&apos;emploi. Voici les modifications proposées.
-                            </p>
-                          </div>
-
-                          {/* Summary + Bulk actions */}
-                          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6 p-4 bg-white border border-mid-gray rounded-xl">
-                            <div>
-                              <p className="text-caption text-text-gray">
-                                <span className="font-semibold text-navy">{approvedCount}</span> changement{approvedCount !== 1 ? 's' : ''} approuve{approvedCount !== 1 ? 's' : ''} sur <span className="font-semibold text-navy">{diffItems.length}</span>
-                              </p>
-                              {!allDiffsReviewed && (
-                                <p className="text-small text-text-gray mt-1">
-                                  Veuillez revoir tous les changements pour continuer.
-                                </p>
+                    {/* Revue section par section + aperçu */}
+                    {!isProcessingDiffs && !optimizationError && currentReviewGroup && (
+                      <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ duration: 0.4 }}
+                        className="grid grid-cols-1 lg:grid-cols-[1fr_400px] gap-6 items-start"
+                      >
+                        {/* ─── Colonne gauche : wizard ─── */}
+                        <div className="min-w-0">
+                          {/* Score ATS */}
+                          {atsScore !== null && (
+                            <div className="flex items-center gap-3 mb-5">
+                              <AtsGauge value={atsScore} label="Score ATS" isAfter />
+                              {atsScoreBefore !== null && atsScore > atsScoreBefore && (
+                                <span className="text-caption font-semibold" style={{ color: 'var(--success)' }}>
+                                  +{atsScore - atsScoreBefore} pts vs votre CV d'origine
+                                </span>
                               )}
                             </div>
-                            <div className="flex gap-2">
-                              <motion.button
-                                className="flex items-center gap-1.5 text-caption px-4 py-2 rounded-lg border border-mid-gray text-navy hover:bg-navy-50 transition-colors duration-200"
-                                onClick={approveAll}
-                                whileHover={{ scale: 1.02 }}
-                                whileTap={{ scale: 0.98 }}
-                              >
-                                <Check size={14} />
-                                Tout approuver
-                              </motion.button>
-                              <motion.button
-                                className="flex items-center gap-1.5 text-caption px-4 py-2 rounded-lg border border-mid-gray text-text-gray hover:bg-light-gray transition-colors duration-200"
-                                onClick={rejectAll}
-                                whileHover={{ scale: 1.02 }}
-                                whileTap={{ scale: 0.98 }}
-                              >
-                                <X size={14} />
-                                Tout rejeter
-                              </motion.button>
-                            </div>
+                          )}
+
+                          {/* Sous-stepper des sections */}
+                          <div className="flex gap-2 overflow-x-auto pb-2 mb-1 -mx-1 px-1">
+                            {visibleReviewGroups.map((group, gi) => {
+                              const active = gi === reviewSection
+                              const done = reviewGroupReviewed(group.id) && diffsByGroup(group.id).length > 0
+                              return (
+                                <button
+                                  key={group.id}
+                                  onClick={() => setReviewSection(gi)}
+                                  className="flex items-center gap-1.5 shrink-0 text-caption font-medium px-3 py-1.5 rounded-full border transition-colors duration-200"
+                                  style={{
+                                    borderColor: active ? 'var(--coral)' : done ? 'var(--success)' : 'var(--mid-gray)',
+                                    background: active ? 'var(--coral-50)' : '#fff',
+                                    color: active ? 'var(--coral)' : done ? 'var(--success)' : 'var(--text-gray)',
+                                  }}
+                                >
+                                  {done ? <Check size={13} /> : <span className="text-[11px] font-bold">{gi + 1}</span>}
+                                  {group.label}
+                                </button>
+                              )
+                            })}
                           </div>
 
-                          {/* Diff cards */}
+                          {/* En-tête de la section courante */}
+                          {(() => {
+                            const groupDiffs = diffsByGroup(currentReviewGroup.id)
+                            const reviewed = groupDiffs.filter(d => d.status === 'approved' || d.status === 'rejected').length
+                            return (
+                              <div className="flex items-center justify-between mt-4 mb-3">
+                                <h2 className="text-subsection text-navy">{currentReviewGroup.label}</h2>
+                                {groupDiffs.length > 0 && (
+                                  <span className="text-small text-text-gray">{reviewed}/{groupDiffs.length} traité{groupDiffs.length > 1 ? 's' : ''}</span>
+                                )}
+                              </div>
+                            )
+                          })()}
+
+                          {/* Bloc URLs éditables (section Informations) */}
+                          {currentReviewGroup.id === 'informations' && (
+                            <div className="bg-white border border-mid-gray rounded-xl p-4 mb-4">
+                              <p className="text-[11px] font-bold uppercase tracking-wider text-text-gray mb-3">Liens</p>
+                              <div className="flex flex-col gap-2">
+                                {(links ?? []).map((link, li) => (
+                                  <div key={link.id} className="flex items-center gap-2">
+                                    <span className="text-caption font-medium text-navy w-[80px] shrink-0 truncate">{link.label}</span>
+                                    <input
+                                      value={link.url}
+                                      onChange={(e) => setLinks(prev => (prev ?? []).map((l, i) => i === li ? { ...l, url: e.target.value } : l))}
+                                      placeholder="https://…"
+                                      className="flex-1 min-w-0 border border-mid-gray rounded-lg px-3 py-1.5 text-caption text-navy outline-none focus:border-coral transition-colors"
+                                    />
+                                    <button
+                                      onClick={() => setLinks(prev => (prev ?? []).filter((_, i) => i !== li))}
+                                      className="p-1.5 rounded-lg text-text-gray hover:text-error hover:bg-light-gray transition-colors shrink-0"
+                                      title="Supprimer"
+                                    >
+                                      <X size={15} />
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                              <div className="flex flex-wrap gap-2 mt-3">
+                                {(['LinkedIn', 'Portfolio', 'GitHub', 'Lien personnalisé'] as const).map(label => (
+                                  <button
+                                    key={label}
+                                    onClick={() => setLinks(prev => [...(prev ?? []), { id: `link-${Date.now()}`, label: label === 'Lien personnalisé' ? 'Lien' : label, url: '' }])}
+                                    className="flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-1.5 rounded-lg border border-mid-gray text-navy hover:bg-navy-50 transition-colors"
+                                  >
+                                    <span className="text-[13px]">+</span> {label}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Cartes de diff de la section courante */}
                           <div className="flex flex-col gap-4">
-                            {diffItems.map((diff, i) => (
+                            {diffsByGroup(currentReviewGroup.id).map((diff, i) => (
                               <DiffCard
                                 key={diff.id}
                                 diff={diff}
                                 index={i}
+                                keywordCount={countAddedKeywords(diff)}
+                                reason={diffReasonFor(diff)}
                                 onApprove={() => setDiffStatus(diff.id, 'approved')}
                                 onReject={() => setDiffStatus(diff.id, 'rejected')}
                                 onModify={() => setDiffStatus(diff.id, 'modifying')}
@@ -2143,33 +2367,145 @@ export default function Dashboard() {
                                 onCancelModify={() => setDiffStatus(diff.id, 'pending')}
                               />
                             ))}
+                            {diffsByGroup(currentReviewGroup.id).length === 0 && currentReviewGroup.id === 'informations' && (
+                              <p className="text-caption text-text-gray">Aucune suggestion sur cette section — vérifiez simplement vos liens ci-dessus.</p>
+                            )}
                           </div>
 
-                          {/* Navigation */}
-                          <div className="flex justify-between mt-10">
+                          {/* Actions groupées de la section */}
+                          {diffsByGroup(currentReviewGroup.id).some(d => d.status === 'pending' || d.status === 'modifying') && (
+                            <div className="flex gap-2 mt-4">
+                              <button
+                                onClick={() => diffsByGroup(currentReviewGroup.id).forEach(d => setDiffStatus(d.id, 'approved'))}
+                                className="flex items-center gap-1.5 text-caption px-3.5 py-2 rounded-lg border border-mid-gray text-navy hover:bg-navy-50 transition-colors"
+                              >
+                                <Check size={14} /> Tout accepter cette section
+                              </button>
+                              <button
+                                onClick={() => diffsByGroup(currentReviewGroup.id).forEach(d => setDiffStatus(d.id, 'rejected'))}
+                                className="flex items-center gap-1.5 text-caption px-3.5 py-2 rounded-lg border border-mid-gray text-text-gray hover:bg-light-gray transition-colors"
+                              >
+                                <X size={14} /> Tout rejeter
+                              </button>
+                            </div>
+                          )}
+
+                          {/* Navigation section */}
+                          <div className="flex justify-between mt-8">
                             <motion.button
                               className="flex items-center gap-2 text-button text-navy px-5 py-3 rounded-xl hover:bg-navy-50 transition-colors duration-200"
-                              onClick={() => goToStep(2, -1)}
+                              onClick={() => reviewSection === 0 ? goToStep(2, -1) : setReviewSection(reviewSection - 1)}
                               whileHover={{ scale: 1.02 }}
                               whileTap={{ scale: 0.98 }}
                             >
                               <ArrowLeft size={18} />
-                              Retour
+                              {reviewSection === 0 ? "Retour à l'offre" : 'Section précédente'}
                             </motion.button>
-                            <motion.button
-                              className="flex items-center gap-2 text-button text-white px-8 py-4 rounded-xl transition-all duration-200"
-                              style={{ background: 'var(--coral)', opacity: allDiffsReviewed ? 1 : 0.5 }}
-                              onClick={() => allDiffsReviewed && goToStep(4, 1)}
-                              whileHover={allDiffsReviewed ? { scale: 1.02, boxShadow: '0 4px 16px rgba(248,90,62,0.35)' } : {}}
-                              whileTap={allDiffsReviewed ? { scale: 0.98 } : {}}
-                            >
-                              Continuer vers l&apos;editeur
-                              <ChevronDown size={18} className="rotate-[-90deg]" />
-                            </motion.button>
+                            {reviewSection < visibleReviewGroups.length - 1 ? (
+                              <motion.button
+                                className="flex items-center gap-2 text-button text-white px-7 py-3.5 rounded-xl transition-all duration-200"
+                                style={{ background: 'var(--coral)', opacity: reviewGroupReviewed(currentReviewGroup.id) ? 1 : 0.5 }}
+                                disabled={!reviewGroupReviewed(currentReviewGroup.id)}
+                                onClick={() => reviewGroupReviewed(currentReviewGroup.id) && setReviewSection(reviewSection + 1)}
+                                whileHover={reviewGroupReviewed(currentReviewGroup.id) ? { scale: 1.02 } : {}}
+                                whileTap={reviewGroupReviewed(currentReviewGroup.id) ? { scale: 0.98 } : {}}
+                              >
+                                Section suivante
+                                <ChevronDown size={18} className="rotate-[-90deg]" />
+                              </motion.button>
+                            ) : (
+                              <motion.button
+                                className="flex items-center gap-2 text-button text-white px-8 py-4 rounded-xl transition-all duration-200"
+                                style={{ background: 'var(--coral)', opacity: allDiffsReviewed ? 1 : 0.5 }}
+                                disabled={!allDiffsReviewed}
+                                onClick={() => allDiffsReviewed && goToStep(4, 1)}
+                                whileHover={allDiffsReviewed ? { scale: 1.02, boxShadow: '0 4px 16px rgba(248,90,62,0.35)' } : {}}
+                                whileTap={allDiffsReviewed ? { scale: 0.98 } : {}}
+                              >
+                                Continuer vers l&apos;éditeur
+                                <ChevronDown size={18} className="rotate-[-90deg]" />
+                              </motion.button>
+                            )}
                           </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
+                        </div>
+
+                        {/* ─── Colonne droite : aperçu CV live ─── */}
+                        <div className="hidden lg:block sticky top-[84px]">
+                          <p className="text-[11px] font-bold uppercase tracking-wider text-text-gray mb-2">Aperçu de votre CV</p>
+                          <div
+                            className="bg-white rounded-lg overflow-hidden border shadow-sm"
+                            style={{ borderColor: '#E5E5E0', fontFamily: getFontFamily(), maxHeight: 'calc(100dvh - 130px)', overflowY: 'auto' }}
+                          >
+                            <div className="p-6" style={{ fontSize: '11px', lineHeight: 1.5, color: '#333' }}>
+                              {/* En-tête */}
+                              <div className="text-center mb-3 pb-3" style={{ borderBottom: `2px solid ${activeAccentHex}` }}>
+                                <div className="font-bold" style={{ fontSize: '17px', color: '#111' }}>{fullName || 'Votre nom'}</div>
+                                <div className="font-medium mt-0.5" style={{ fontSize: '11px', color: activeAccentHex }}>{cvTitle || 'Titre professionnel'}</div>
+                                {contactLine.length > 0 && (
+                                  <div className="mt-1" style={{ fontSize: '9px', color: '#777' }}>{contactLine.join('  |  ')}</div>
+                                )}
+                                {contactLinks.length > 0 && (
+                                  <div className="mt-0.5" style={{ fontSize: '9px', color: activeAccentHex }}>{contactLinks.map(getContactLinkLabel).join('  ·  ')}</div>
+                                )}
+                              </div>
+                              {/* Profil */}
+                              {profileText && (
+                                <div className="mb-3">
+                                  <div className="font-bold uppercase mb-1" style={{ fontSize: '10px', color: '#1A1A1A', letterSpacing: '0.05em', borderBottom: '1px solid #E5E5E0', paddingBottom: 2 }}>Profil</div>
+                                  <p style={{ fontSize: '10px', color: '#444' }}>{profileText}</p>
+                                </div>
+                              )}
+                              {/* Expériences */}
+                              {allExperiences.length > 0 && (
+                                <div className="mb-3">
+                                  <div className="font-bold uppercase mb-1.5" style={{ fontSize: '10px', color: '#1A1A1A', letterSpacing: '0.05em', borderBottom: '1px solid #E5E5E0', paddingBottom: 2 }}>Expérience professionnelle</div>
+                                  {allExperiences.map(({ exp, origIndex }) => (
+                                    <div key={origIndex} className="mb-2">
+                                      <div className="flex justify-between items-baseline">
+                                        <span className="font-bold" style={{ fontSize: '10.5px', color: '#111' }}>{exp.title}</span>
+                                        <span className="shrink-0 ml-2" style={{ fontSize: '9px', color: '#888' }}>{exp.period}</span>
+                                      </div>
+                                      {(exp.company || exp.location) && (
+                                        <div className="font-semibold" style={{ fontSize: '9.5px', color: '#555' }}>{[exp.company, exp.location].filter(Boolean).join(' — ')}</div>
+                                      )}
+                                      <ul className="mt-0.5">
+                                        {exp.bullets.slice(0, 4).map((bullet, bi) => (
+                                          <li key={bi} className="relative pl-2.5" style={{ fontSize: '9.5px', color: '#444' }}>
+                                            <span className="absolute left-0" style={{ color: activeAccentHex }}>•</span>{bullet}
+                                          </li>
+                                        ))}
+                                      </ul>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                              {/* Compétences */}
+                              {competencesText && (
+                                <div className="mb-3">
+                                  <div className="font-bold uppercase mb-1" style={{ fontSize: '10px', color: '#1A1A1A', letterSpacing: '0.05em', borderBottom: '1px solid #E5E5E0', paddingBottom: 2 }}>Compétences</div>
+                                  <p style={{ fontSize: '9.5px', color: '#444' }}>{competencesText}</p>
+                                </div>
+                              )}
+                              {/* Formation */}
+                              {educationsDisplay.length > 0 && (
+                                <div className="mb-3">
+                                  <div className="font-bold uppercase mb-1" style={{ fontSize: '10px', color: '#1A1A1A', letterSpacing: '0.05em', borderBottom: '1px solid #E5E5E0', paddingBottom: 2 }}>Formation</div>
+                                  {educationsDisplay.map((edu, ei) => (
+                                    <div key={ei} className="mb-1">
+                                      <div className="flex justify-between items-baseline">
+                                        <span className="font-bold" style={{ fontSize: '10px', color: '#111' }}>{edu.degree}</span>
+                                        <span className="shrink-0 ml-2" style={{ fontSize: '9px', color: '#888' }}>{edu.period}</span>
+                                      </div>
+                                      <div style={{ fontSize: '9px', color: '#666' }}>{[edu.school, edu.location].filter(Boolean).join(', ')}</div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </motion.div>
+                    )}
                   </div>
                 )}
 
@@ -3261,6 +3597,8 @@ function DiffCard({
   onModify,
   onSaveModify,
   onCancelModify,
+  keywordCount = 0,
+  reason,
 }: {
   diff: DiffItem
   index: number
@@ -3269,6 +3607,8 @@ function DiffCard({
   onModify: () => void
   onSaveModify: (text: string) => void
   onCancelModify: () => void
+  keywordCount?: number
+  reason?: string
 }) {
   const [editText, setEditText] = useState(diff.modifiedText || diff.apres)
 
@@ -3292,10 +3632,15 @@ function DiffCard({
       }}
     >
       {/* Card header */}
-      <div className="px-5 py-3 flex items-center justify-between" style={{ background: 'var(--off-white)' }}>
-        <h4 className="text-caption font-bold uppercase tracking-wider" style={{ color: 'var(--navy)' }}>
+      <div className="px-5 py-3 flex items-center justify-between gap-2" style={{ background: 'var(--off-white)' }}>
+        <h4 className="text-caption font-bold uppercase tracking-wider truncate" style={{ color: 'var(--navy)' }}>
           {diff.section}
         </h4>
+        {keywordCount > 0 && diff.status !== 'rejected' && (
+          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0" style={{ background: '#D1FAE5', color: '#047857' }}>
+            +{keywordCount} mot{keywordCount > 1 ? 's' : ''}-clé{keywordCount > 1 ? 's' : ''}
+          </span>
+        )}
         {diff.status === 'approved' && (
           <span className="text-[10px] font-semibold px-2.5 py-1 rounded-full" style={{ background: '#D1FAE5', color: '#10B981' }}>
             Approuve
@@ -3343,6 +3688,16 @@ function DiffCard({
             </div>
           )}
         </div>
+
+        {/* Pourquoi */}
+        {reason && diff.status !== 'modifying' && (
+          <div className="mb-3 flex items-start gap-2 rounded-lg px-3 py-2" style={{ background: 'var(--coral-50)' }}>
+            <span className="text-[13px]" aria-hidden>💡</span>
+            <p className="text-[12px]" style={{ color: '#9A3412' }}>
+              <span className="font-semibold">Pourquoi : </span>{reason}
+            </p>
+          </div>
+        )}
 
         {/* Actions */}
         {diff.status === 'modifying' ? (

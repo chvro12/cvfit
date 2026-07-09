@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import { z } from 'zod'
 import { requireAuth, type AuthedRequest } from '../lib/auth'
-import { analyzeOfferAndCv, applyOptimizations, estimateOptimizedScore, generateCoverLetter, generateInterviewPrep, generateOptimizations, reinforceMissingKeywords, structureCv, translateCvToEnglish } from '../lib/kimi'
+import { analyzeOfferAndCv, applyOptimizations, completeMissingSections, estimateOptimizedScore, findUncoveredSections, generateCoverLetter, generateInterviewPrep, generateOptimizations, reinforceMissingKeywords, structureCv, translateCvToEnglish } from '../lib/kimi'
 import { prisma } from '../lib/prisma'
 
 export const generationsRouter = Router()
@@ -10,6 +10,8 @@ const createSchema = z.object({
   documentId: z.string().min(1),
   jobOffer: z.string().min(50),
   mode: z.string().default('preserve'),
+  experienceLevel: z.string().optional(),
+  situation: z.string().optional(),
 })
 
 generationsRouter.post('/', requireAuth, async (req: AuthedRequest, res, next) => {
@@ -47,11 +49,33 @@ generationsRouter.post('/', requireAuth, async (req: AuthedRequest, res, next) =
       const optimizations = await generateOptimizations(document.extractedText, input.jobOffer, {
         keywords,
         missingKeywords: analysis.missingKeywords,
+        experienceLevel: input.experienceLevel,
+        situation: input.situation,
       })
+
+      let finalOptimizations = optimizations
+
+      // 2b. Controle de couverture : garantit que CHAQUE section du CV structure
+      //     (chaque experience, chaque diplome, langues, certifs, passions...) a bien
+      //     recu une optimisation ; passe ciblee pour completer les sections oubliees.
+      try {
+        const uncovered = findUncoveredSections(structuredCv, finalOptimizations)
+        if (uncovered.length > 0) {
+          const completed = await completeMissingSections(document.extractedText, input.jobOffer, uncovered, {
+            keywords,
+            experienceLevel: input.experienceLevel,
+            situation: input.situation,
+          })
+          const extras = completed.filter(item =>
+            !finalOptimizations.some(opt => opt.section.toLowerCase() === item.section.toLowerCase()))
+          finalOptimizations = [...finalOptimizations, ...extras]
+        }
+      } catch {
+        // passe optionnelle : on garde le resultat de la premiere passe
+      }
 
       // 3. Score "apres" : matching exact des mots-cles dans le texte optimise
       //    (deterministe et instantane, comme un vrai ATS — aucun appel IA).
-      let finalOptimizations = optimizations
       let optimizedText = applyOptimizations(document.extractedText, finalOptimizations)
       let estimate = estimateOptimizedScore(analysis, optimizedText, finalOptimizations.length)
 
