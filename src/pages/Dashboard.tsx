@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useDropzone } from 'react-dropzone'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useNavigate, useSearchParams } from 'react-router'
@@ -7,9 +7,9 @@ import {
   UploadCloud, FileText, X, Check, ArrowLeft,
   Loader2, Circle, CheckCircle2,
   Download, RotateCcw, Save, Link2, ArrowUp, ArrowDown,
-  GripVertical, ChevronDown, Pencil, Minimize2, Undo2, Languages,
+  GripVertical, ChevronDown, Pencil, Minimize2, Undo2, Languages, Library,
 } from 'lucide-react'
-import { createGeneration, extractKeywordsFromOffer, fetchOfferFromUrl, getGeneration, saveEditorState, translateGenerationToEnglish, uploadCvDocument, type EditorState, type GenerationResult, type StructuredCv } from '../services/kimi'
+import { createGeneration, extractKeywordsFromOffer, fetchOfferFromUrl, getGeneration, listDocuments, saveEditorState, translateGenerationToEnglish, uploadCvDocument, type DocumentSummary, type EditorState, type GenerationResult, type StructuredCv, type UploadedDocument } from '../services/kimi'
 import { getMe } from '../services/api'
 
 /* ───────── easing ───────── */
@@ -423,6 +423,9 @@ export default function Dashboard() {
   /* ── step 1: CV ── */
   const [cvFile, setCvFile] = useState<File | null>(null)
   const [photoFile, setPhotoFile] = useState<File | null>(null)
+  const [savedDocuments, setSavedDocuments] = useState<DocumentSummary[]>([])
+  const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(null)
+  const [isLoadingDocuments, setIsLoadingDocuments] = useState(false)
 
   /* ── step 2: job offer ── */
   const [jobOffer, setJobOffer] = useState('')
@@ -488,7 +491,14 @@ export default function Dashboard() {
   const [direction, setDirection] = useState(1)
 
   /* ── derived ── */
-  const canContinueStep1 = cvFile !== null
+  const selectedDocument = savedDocuments.find(document => document.id === selectedDocumentId) ?? null
+  const savedDocumentOptions = useMemo(() => {
+    if (savedDocuments.length <= 1) return savedDocuments
+    const original = savedDocuments[savedDocuments.length - 1]
+    const others = savedDocuments.filter(document => document.id !== original.id)
+    return [original, ...others]
+  }, [savedDocuments])
+  const canContinueStep1 = cvFile !== null || selectedDocumentId !== null
   const canContinueStep2 = jobOffer.trim().length >= 50
   const allDiffsReviewed = diffItems.every(d => d.status === 'approved' || d.status === 'rejected')
   const approvedCount = diffItems.filter(d => d.status === 'approved').length
@@ -497,6 +507,26 @@ export default function Dashboard() {
   useEffect(() => {
     getMe().catch(() => navigate('/connexion'))
   }, [navigate])
+
+  useEffect(() => {
+    let cancelled = false
+    setIsLoadingDocuments(true)
+    listDocuments()
+      .then((documents) => {
+        if (cancelled) return
+        setSavedDocuments(documents)
+        if (!cvFile && !selectedDocumentId && documents.length > 0) {
+          setSelectedDocumentId(documents[documents.length - 1].id)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setSavedDocuments([])
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingDocuments(false)
+      })
+    return () => { cancelled = true }
+  }, [cvFile, selectedDocumentId])
 
   /* ── application d'un resultat de generation (live ou rouvert) ── */
   const applyGenerationResult = useCallback((generation: GenerationResult) => {
@@ -589,20 +619,21 @@ export default function Dashboard() {
 
   useEffect(() => {
     const handler = (e: BeforeUnloadEvent) => {
-      if (cvFile || jobOffer) {
+      if (cvFile || selectedDocumentId || jobOffer) {
         e.preventDefault()
         e.returnValue = ''
       }
     }
     window.addEventListener('beforeunload', handler)
     return () => window.removeEventListener('beforeunload', handler)
-  }, [cvFile, jobOffer])
+  }, [cvFile, selectedDocumentId, jobOffer])
 
   /* ═══════ Step 1: Upload CV ═══════ */
   const onDropCv = useCallback((acceptedFiles: File[]) => {
     if (acceptedFiles.length > 0) {
       const file = acceptedFiles[0]
       setCvFile(file)
+      setSelectedDocumentId(null)
       setCvContact(null)
       setCvData(null)
       setActiveGenerationId(null)
@@ -662,7 +693,7 @@ export default function Dashboard() {
 
   /* ═══════ Step 3: AI Diff (OpenAI) ═══════ */
   const startOptimization = async () => {
-    if (!cvFile) return
+    if (!cvFile && !selectedDocumentId) return
     setIsProcessingDiffs(true)
     setProcessingSubStep(0)
     setOptimizationError(null)
@@ -671,7 +702,13 @@ export default function Dashboard() {
 
     try {
       setProcessingSubStep(0)
-      const document = await uploadCvDocument(cvFile, photoFile)
+      let document: Pick<UploadedDocument, 'id' | 'extractedText'> | null = null
+      if (selectedDocumentId) {
+        document = { id: selectedDocumentId, extractedText: null }
+      } else if (cvFile) {
+        document = await uploadCvDocument(cvFile, photoFile)
+      }
+      if (!document) throw new Error('Aucun CV sélectionné.')
       if (document.extractedText) {
         setCvContact(parseCvContactInfo(document.extractedText))
       }
@@ -1583,8 +1620,76 @@ export default function Dashboard() {
                   <div>
                     <h2 className="text-section text-navy mb-2">Uploadez votre CV</h2>
                     <p className="text-body-large text-text-gray mb-8">
-                      Formats acceptés : PDF ou DOCX. Votre contenu sera restructuré dans un modèle optimisé pour les ATS.
+                      Sélectionnez un CV déjà importé ou ajoutez un nouveau fichier PDF/DOCX. Votre contenu sera restructuré dans un modèle optimisé pour les ATS.
                     </p>
+
+                    {isLoadingDocuments && (
+                      <div className="mb-5 flex items-center gap-2 rounded-xl border border-mid-gray bg-white px-4 py-3 text-caption text-text-gray">
+                        <Loader2 size={15} className="animate-spin" style={{ color: 'var(--coral)' }} />
+                        Chargement de votre bibliothèque CV…
+                      </div>
+                    )}
+
+                    {!isLoadingDocuments && savedDocuments.length > 0 && (
+                      <div className="mb-6 rounded-2xl border border-mid-gray bg-white p-5">
+                        <div className="mb-4 flex items-start gap-3">
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl" style={{ background: 'var(--coral-50)', color: 'var(--coral)' }}>
+                            <Library size={19} />
+                          </div>
+                          <div>
+                            <h3 className="text-card-title text-navy">Réutiliser un CV existant</h3>
+                            <p className="text-caption text-text-gray">
+                              Votre CV original reste en mémoire dans votre bibliothèque. Choisissez-le ici pour éviter de le réuploader.
+                            </p>
+                          </div>
+                        </div>
+                        <div className="grid max-h-[360px] gap-3 overflow-y-auto pr-1">
+                          {savedDocumentOptions.map((document, index) => {
+                            const selected = selectedDocumentId === document.id
+                            const isOriginal = index === 0
+                            return (
+                              <button
+                                key={document.id}
+                                type="button"
+                                onClick={() => {
+                                  setSelectedDocumentId(document.id)
+                                  setCvFile(null)
+                                  setPhotoFile(null)
+                                  setCvContact(null)
+                                  setCvData(null)
+                                  setActiveGenerationId(null)
+                                }}
+                                className="flex items-center gap-3 rounded-xl border px-4 py-3 text-left transition-colors"
+                                style={{
+                                  borderColor: selected ? 'var(--coral)' : 'var(--mid-gray)',
+                                  background: selected ? 'var(--coral-50)' : '#fff',
+                                }}
+                              >
+                                <FileText size={20} className="shrink-0 text-navy" />
+                                <div className="min-w-0 flex-1">
+                                  <p className="truncate text-caption font-semibold text-navy">
+                                    {document.originalName}
+                                    {isOriginal && <span className="ml-2 text-small font-bold" style={{ color: 'var(--coral)' }}>CV originel</span>}
+                                  </p>
+                                  <p className="text-small text-text-gray">
+                                    {document.type} · {formatFileSize(document.size)} · {document._count.generations} adaptation{document._count.generations > 1 ? 's' : ''}
+                                  </p>
+                                </div>
+                                <span
+                                  className="shrink-0 rounded-full px-2.5 py-1 text-small font-bold"
+                                  style={{
+                                    color: selected ? 'var(--coral)' : 'var(--text-gray)',
+                                    background: selected ? '#fff' : 'var(--navy-50)',
+                                  }}
+                                >
+                                  {selected ? 'Sélectionné' : 'Utiliser'}
+                                </span>
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )}
 
                     {/* Dropzone */}
                     <div
@@ -1603,7 +1708,7 @@ export default function Dashboard() {
                         style={{ color: isDragActive ? 'var(--coral)' : 'var(--text-gray)' }}
                       />
                       <p className="text-subsection text-navy mb-2">
-                        Glissez-déposez votre CV ici
+                        {selectedDocument ? 'Uploader un autre CV' : 'Glissez-déposez votre CV ici'}
                       </p>
                       <p className="text-body-large mb-3">
                         <span style={{ color: 'var(--coral)' }}>ou cliquez pour parcourir</span>
@@ -1612,6 +1717,31 @@ export default function Dashboard() {
                         PDF ou DOCX — max 10 Mo
                       </p>
                     </div>
+
+                    {selectedDocument && !cvFile && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.3, ease: easeOutExpo }}
+                        className="mt-5 bg-white border rounded-xl px-5 py-4 flex items-center gap-4"
+                        style={{ borderColor: 'var(--coral)' }}
+                      >
+                        <FileText size={40} className="text-navy shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-caption font-medium text-navy truncate">{selectedDocument.originalName}</p>
+                          <p className="text-small text-text-gray">
+                            CV réutilisé depuis la bibliothèque · {selectedDocument.type} · {formatFileSize(selectedDocument.size)}
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => setSelectedDocumentId(null)}
+                          className="p-1.5 rounded-lg hover:bg-light-gray text-text-gray hover:text-error transition-colors duration-200 shrink-0"
+                          aria-label="Ne plus utiliser ce CV"
+                        >
+                          <X size={20} />
+                        </button>
+                      </motion.div>
+                    )}
 
                     {/* Uploaded file card */}
                     <AnimatePresence>
