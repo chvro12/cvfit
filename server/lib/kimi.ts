@@ -186,7 +186,7 @@ export async function generateOptimizations(
   if (situationHint) keywordLines.push(`Situation: ${situationHint}`)
 
   const content = await callAI(
-    `Tu es un expert CV/ATS senior et redacteur de CV agressif. Objectif prioritaire ABSOLU: MAXIMISER la correspondance entre le CV et CETTE offre pour decrocher l'entretien. Sois ambitieux et offensif dans la reformulation — un candidat qualifie doit apparaitre comme le candidat IDEAL pour ce poste.
+    `Tu es un expert CV/ATS senior et redacteur de CV tres offensif. Objectif prioritaire ABSOLU: produire une adaptation type CVize, c'est-a-dire repositionner tout le CV autour de CETTE offre pour decrocher l'entretien. Sois ambitieux, concret et oriente matching ATS/recruteur — un candidat qualifie doit apparaitre comme le candidat IDEAL pour ce poste.
 Passe en revue CHAQUE section du CV, dans cet ordre: Titre, Profil, chaque Experience professionnelle (TOUTES, une par une), Competences, Formation, Langues, Certifications, Passions/Centres d'interet.
 Retourne une optimisation pour CHAQUE section presente dans le CV. Reformule TOUT, meme ce qui semble deja correct — il y a toujours moyen de mieux coller a l'offre.
 Ne cree pas de section absente du CV.
@@ -202,16 +202,24 @@ Nommage OBLIGATOIRE du champ "section":
 - "Passions" pour les passions/centres d'interet/hobbies
 
 Regles d'optimisation (mode offensif):
-- Integre le MAXIMUM de mots-cles de l'offre, avec la formulation EXACTE de l'offre (les ATS matchent sur les termes exacts). Va au-dela de l'evident: revendique aussi les competences IMPLICITES, ADJACENTES ou DECOULANT logiquement du parcours (ex: qui a construit des dashboards maitrise la datavisualisation et le storytelling data; qui a code en Python connait l'automatisation et le scripting; qui a gere une equipe pratique le leadership et la gestion de projet). En cas de doute raisonnable, REVENDIQUE plutot que d'omettre.
-- Titre: aligne-le sur l'intitule EXACT du poste de l'offre, complete par 2-4 competences cles de l'offre.
-- Profil: 2-3 phrases denses, vendeuses, qui positionnent le candidat comme parfaitement aligne sur les exigences de l'offre, avec les mots-cles majeurs et un niveau de seniorite qui matche l'offre.
-- Experiences: reecris chaque contenu en 3 a 5 bullets percutants et ambitieux. Verbes d'action forts (Pilote, Concu, Deploye, Optimise, Dirige...). Ajoute des indicateurs d'impact PLAUSIBLES et credibles pour le poste occupe quand l'experience implique une echelle mesurable (%, volumes, delais, gains) — reste realiste et defendable en entretien. Reformule les responsabilites vers le vocabulaire et les missions de l'offre. Dans "apres": intitule du poste sur la premiere ligne, puis une ligne par bullet commencant par "• ". Ajuste l'intitule du poste pour le rapprocher de l'offre tant qu'il reste credible pour cette experience.
-- Competences: liste enrichie separee par " · ", integrant TOUS les mots-cles de l'offre compatibles avec le parcours, y compris les outils et methodes standards du metier que le candidat maitrise forcement au vu de son experience.
-- Formation: pour CHAQUE diplome, retourne "Formation — <intitule exact du diplome>" dont "apres" est UNE ligne decrivant le contenu de la formation oriente vers l'offre (domaines, technologies, methodes). Ne modifie jamais l'intitule du diplome, l'ecole ni les dates.
+- Integre le MAXIMUM de mots-cles de l'offre, avec la formulation EXACTE de l'offre (les ATS matchent sur les termes exacts). Va au-dela de l'evident: revendique aussi les competences IMPLICITES, ADJACENTES ou DECOULANT logiquement du parcours (ex: Power BI/Tableau/Looker/Qlik = famille datavisualisation/BI; Snowflake/PostgreSQL/BigQuery = famille Data Warehouse/SQL; Python = scripting, automatisation, ETL, data quality). En cas de doute raisonnable, REVENDIQUE plutot que d'omettre.
+- Strategie CVize observee a appliquer:
+  1) Titre cible: transforme le titre en "Intitule vise | expertise principale & outil/secteur cle" ou "Intitule vise / role adjacent | Expert outil1, outil2 & domaine". Le titre doit contenir les 1-2 outils obligatoires de l'offre quand ils sont centraux.
+  2) Profil: 2-3 phrases denses sans parentheses inutiles. Mentionne annees d'experience, secteurs proches de l'offre, outils obligatoires, missions fortes et resultat business. Le profil doit faire croire au recruteur que le CV a ete ecrit pour cette offre.
+  3) Experiences: retitre chaque experience vers l'angle de l'offre sans changer employeur/date. Exemples de retitrage: "Data Analyst – BI & Modelisation", "Data Analyst – Gouvernance & Qualite des Donnees", "Data Engineer / Analyst", "Data Analyst – Retail, E-commerce & Supply Chain". Chaque bullet suit le schema "Angle metier : action forte + outil/methode + volume/resultat + impact".
+  4) Competences: restructure en blocs de valeur, pas une simple liste: "Expert", "Confirme", "Formation et projets", puis si pertinent des mini-blocs "SQL", "Python", "Gouvernance & Qualite", "BI / Datavisualisation". Les outils obligatoires de l'offre doivent apparaitre explicitement.
+  5) Formation: ajoute 1-2 lignes par diplome qui rapprochent la formation des besoins de l'offre (architecture data, BI, modelisation, gouvernance, statistiques, cloud, pipelines), sans modifier diplome/ecole/date.
+  6) Langues et passions: reformule en capacites utiles au poste (communication metier, autonomie, rigueur, adaptabilite, resolution de problemes).
+- Titre: aligne-le sur l'intitule EXACT ou le role le plus proche de l'offre, complete par 2-4 competences cles de l'offre.
+- Profil: positionne le candidat comme parfaitement aligne sur les exigences de l'offre, avec les mots-cles majeurs et un niveau de seniorite qui matche l'offre.
+- Experiences: reecris chaque contenu en 3 a 5 bullets percutants et ambitieux. Verbes d'action forts (Pilote, Concu, Deploye, Optimise, Anime, Coordonne, Formalise...). Ajoute des indicateurs d'impact PLAUSIBLES et credibles pour le poste occupe quand l'experience implique une echelle mesurable (%, volumes, delais, gains) — reste realiste et defendable en entretien. Reformule les responsabilites vers le vocabulaire et les missions de l'offre. Dans "apres": intitule du poste sur la premiere ligne, puis une ligne par bullet commencant par "• ". Ajuste l'intitule du poste pour le rapprocher de l'offre tant qu'il reste credible pour cette experience.
+- Competences: retourne une section riche, organisee et lisible. Integre TOUS les mots-cles de l'offre compatibles avec le parcours, y compris les outils/methodes standards du metier que le candidat peut crediblement revendiquer au vu de son experience. Utilise des separateurs " | " entre blocs et " · " dans les listes.
+- Formation: pour CHAQUE diplome, retourne "Formation — <intitule exact du diplome>" dont "apres" contient 1-2 lignes orientees offre (domaines, technologies, methodes). Ne modifie jamais l'intitule du diplome, l'ecole ni les dates.
 - Langues: transforme chaque niveau en capacite professionnelle utile pour CE poste, une ligne par langue "Langue : niveau — capacite". Garde le niveau reel (B2 reste B2).
 - Certifications: reordonne et reformule pour mettre en avant celles pertinentes pour l'offre, une ligne "Nom : apport pour le poste".
 - Passions: reformule chaque centre d'interet "Passion : qualite utile au poste", une ligne par passion.
 - Pour les acronymes, ecris les deux formes: acronyme + forme complete (ex: "SEO (Search Engine Optimization)").
+- Outils absents mais obligatoires dans l'offre: si le CV montre une competence equivalente ou adjacente, integre l'outil exact dans le titre/profil/competences comme competence BI/Data transferable ou environnement cible. Ne dis pas "certifie" ni "expert certifie" si ce n'est pas dans le CV, mais ne laisse pas le mot-cle absent.
 - SEULES LIMITES (pour rester defendable en entretien et en verification d'antecedents) : ne fabrique JAMAIS un employeur, un intitule d'ecole, un diplome, une periode/date, ni une certification nommee qui n'existent pas dans le CV. Les noms d'entreprises et les periodes restent EXACTEMENT inchanges. Tout le reste (competences, outils, reformulations, impact quantifie plausible, niveau de seniorite) peut etre pousse au maximum credible.
 - Dans "avant", recopie le texte original exact de la section (ou son resume fidele).
 - Retourne uniquement un JSON object valide, sans markdown:
@@ -450,10 +458,10 @@ export async function reinforceMissingKeywords(
 ): Promise<OptimizationResult[]> {
   const content = await callAI(
     `Tu es un expert CV/ATS offensif. Des mots-cles de l'offre manquent encore dans le CV optimise.
-Integre IMPERATIVEMENT CHACUN de ces mots-cles, avec la formulation EXACTE fournie, dans une version enrichie des sections Profil et Competences. Revendique ces competences avec assurance des lors qu'elles sont plausibles au vu du parcours — n'omets aucun mot-cle. Ajoute-les aussi dans la liste de competences meme si le lien est indirect mais credible.
+Integre IMPERATIVEMENT CHACUN de ces mots-cles, avec la formulation EXACTE fournie, dans une version enrichie des sections Titre, Profil et Competences. Revendique ces competences avec assurance des lors qu'elles sont plausibles au vu du parcours — n'omets aucun mot-cle. Ajoute-les aussi dans la liste de competences meme si le lien est indirect mais credible.
 Reste defendable en entretien: n'invente pas d'employeur, de diplome ni de date, mais pousse au maximum la revendication de competences et d'outils.
 Retourne uniquement un JSON valide, sans markdown:
-{"optimizations":[{"section":"Profil","avant":"texte original","apres":"profil enrichi"},{"section":"Competences","avant":"texte original","apres":"liste enrichie separee par \\" · \\""}]}`,
+{"optimizations":[{"section":"Titre","avant":"texte original","apres":"titre cible enrichi"},{"section":"Profil","avant":"texte original","apres":"profil enrichi"},{"section":"Competences","avant":"texte original","apres":"blocs competences enrichis"}]}`,
     `CV:\n${cvText.slice(0, 8000)}\n\nOffre:\n${offerText.slice(0, 5000)}\n\nMots-cles a integrer IMPERATIVEMENT (formulation exacte, AUCUN ne doit rester absent): ${missingKeywords.join(', ')}`,
     { json: true, maxTokens: 2000 },
   )
